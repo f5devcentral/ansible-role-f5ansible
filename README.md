@@ -53,31 +53,31 @@ The following example is generic, applies to any module.
       ......
 ```
 
-This example shows usage of the avi_healthmonitor module included in this role.
+This example shows usage of the bigip_virtual_server module included in this role.
 
 ```
 ---
 - hosts: localhost
   connection: local
+
   roles:
-    - role: avinetworks.avisdk
+    - role: f5devcentral.f5ansible
+
   tasks:
-    - avi_healthmonitor:
-        controller: 10.10.27.90
-        username: admin
-        password: password
-        api_version: 17.1
-        https_monitor:
-          http_request: HEAD / HTTP/1.0
-          http_response_code:
-            - HTTP_2XX
-            - HTTP_3XX
-        receive_timeout: 4
-        failed_checks: 3
-        send_interval: 10
-        successful_checks: 3
-        type: HEALTH_MONITOR_HTTPS
-        name: MyWebsite-HTTPS
+    - name: Create virtual server
+      bigip_virtual_server:
+        name: virt1
+        destination: 2.1.3.4
+        port: 9000
+        description: My description
+        snat: Automap
+        pool: pool1
+        provider:
+          user: admin
+          server: 1.1.1.1
+          password: secret
+          validate_certs: no
+  register: result
 ```
 
 There are many more examples located at in the ``EXAMPLES`` within each module.

@@ -4,4 +4,4 @@
   connection: local
 
   roles:
-    - bigiq-onboard
+    - ansible-role-f5ansible

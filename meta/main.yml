@@ -2,6 +2,7 @@
 dependencies: []
 
 galaxy_info:
+  role_name: f5ansible
   author: caphrim007
   description: Ansible role that allows use of the F5 Ansible Modules
   company: F5 Networks
