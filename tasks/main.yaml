@@ -1,0 +1,11 @@
+---
+
+- name: Checking if F5 python SDK is installed
+  debug:
+    msg: "Please installed f5-sdk via pip. 'pip install f5-sdk --upgrade'"
+
+- name: Check ansible version
+  debug:
+    msg: "This role works best with ansible version 2.7 or greater. It is recommended to use the latest ansible version for the best experience."
+  when:
+    - ansible_version.full is version_compare('2.7', '<')
