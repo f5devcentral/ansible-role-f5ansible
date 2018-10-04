@@ -11,8 +11,8 @@ Ansible Modules.
 This role requires Ansible 2.7 or higher. Requirements are listed in the metadata file.
 
 Please install f5-sdk from pip prior to running this module.
-```
 
+```
 pip install f5-sdk --upgrade
 ```
 
@@ -20,8 +20,8 @@ pip install f5-sdk --upgrade
 
 To install the F5 Networks Ansible Role, please issue the command on the machine you will
 run Ansible from.
-```
 
+```
 ansible-galaxy install -f f5devcentral.f5ansible
 ```
 
@@ -41,7 +41,9 @@ working with the F5 Networks Ansible developers to debug problems.
 The following example is generic, applies to any module.
 
 ```
+
 ---
+
 - hosts: localhost
   connection: local
 
@@ -61,6 +63,7 @@ The following example is generic, applies to any module.
 This example shows usage of the bigip_virtual_server module included in this role.
 
 ```
+
 ---
 - hosts: localhost
   connection: local
@@ -94,4 +97,4 @@ Apache 2.0
 ## Author Information
 
 F5 Networks
-[f5 Networks](http://www.f5.com)
+[F5 Networks](http://www.f5.com)
