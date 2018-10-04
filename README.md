@@ -29,7 +29,12 @@ For more information please visit http://docs.ansible.com/ansible/galaxy.html
 
 ## Role Variables
 
+Available variables are listed below, along with default values (see `defaults/main.yml`):
 
+    f5ansible_debug: no
+
+Enables the installation and configuration of debugging functionality. This is useful when
+working with the F5 Networks Ansible developers to debug problems.
 
 ## Example Playbooks
 
