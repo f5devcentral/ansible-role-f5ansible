@@ -5,3 +5,19 @@
 
   roles:
     - ansible-role-f5ansible
+
+  vars:
+    provider:
+      user: admin
+      server: "{{ ansible_host }}"
+      server_port: 443
+      password: admin
+      validate_certs: no
+
+  tasks:
+    - name: Create virtual server
+      bigip_virtual_server:
+        name: virt1
+        destination: 2.1.3.4
+        port: 9000
+        provider: "{{ provider }}"

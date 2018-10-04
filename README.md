@@ -3,6 +3,9 @@
 Using this role, you will be able to use the latest version, and version specific F5 Networks
 Ansible Modules.
 
+This is a stop-gap solution until Ansible Galaxy's "Collection" feature is stable and globally
+available.
+
 ## Requirements
 
  - python >= 2.7
@@ -65,6 +68,7 @@ This example shows usage of the bigip_virtual_server module included in this rol
 ```
 
 ---
+
 - hosts: localhost
   connection: local
 
