@@ -2,7 +2,7 @@
 
 - name: Checking if F5 python SDK is installed
   debug:
-    msg: "Please installed f5-sdk via pip. 'pip install f5-sdk --upgrade'"
+    msg: "Please install f5-sdk via pip. 'pip install f5-sdk --upgrade'"
 
 - name: Check ansible version
   debug:
