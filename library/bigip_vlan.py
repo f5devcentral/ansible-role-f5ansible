@@ -111,6 +111,40 @@ options:
       - Device partition to manage resources on.
     default: Common
     version_added: 2.5
+  source_check:
+    description:
+      - When C(yes), specifies that the system verifies that the return route to an initial
+        packet is the same VLAN from which the packet originated.
+      - The system performs this verification only if the C(auto_last_hop) option is C(no).
+    type: bool
+    version_added: 2.8
+  fail_safe:
+    description:
+      - When C(yes), specifies that the VLAN takes the specified C(fail_safe_action) if the
+        system detects a loss of traffic on this VLAN's interfaces.
+    type: bool
+    version_added: 2.8
+  fail_safe_timeout:
+    description:
+      - Specifies the number of seconds that a system can run without detecting network
+        traffic on this VLAN before it takes the C(fail_safe_action).
+    version_added: 2.8
+  fail_safe_action:
+    description:
+      - Specifies the action that the system takes when it does not detect any traffic on
+        this VLAN, and the C(fail_safe_timeout) has expired.
+    choices:
+      - reboot
+      - restart-all
+    version_added: 2.8
+  sflow_poll_interval:
+    description:
+      - Specifies the maximum interval in seconds between two pollings.
+    version_added: 2.8
+  sflow_sampling_rate:
+    description:
+      - Specifies the ratio of packets observed to the samples generated.
+    version_added: 2.8
 notes:
   - Requires BIG-IP versions >= 12.0.0
 extends_documentation_fragment: f5
@@ -122,45 +156,45 @@ author:
 EXAMPLES = r'''
 - name: Create VLAN
   bigip_vlan:
-      name: "net1"
-      password: "secret"
-      server: "lb.mydomain.com"
-      user: "admin"
-      validate_certs: "no"
+    name: net1
+    provider:
+      password: secret
+      server: lb.mydomain.com
+      user: admin
   delegate_to: localhost
 
 - name: Set VLAN tag
   bigip_vlan:
-      name: "net1"
-      password: "secret"
-      server: "lb.mydomain.com"
-      tag: "2345"
-      user: "admin"
-      validate_certs: "no"
+    name: net1
+    tag: 2345
+    provider:
+      user: admin
+      password: secret
+      server: lb.mydomain.com
   delegate_to: localhost
 
 - name: Add VLAN 2345 as tagged to interface 1.1
   bigip_vlan:
-      tagged_interface: 1.1
-      name: "net1"
-      password: "secret"
-      server: "lb.mydomain.com"
-      tag: "2345"
-      user: "admin"
-      validate_certs: "no"
+    tagged_interface: 1.1
+    name: net1
+    tag: 2345
+    provider:
+      password: secret
+      server: lb.mydomain.com
+      user: admin
   delegate_to: localhost
 
 - name: Add VLAN 1234 as tagged to interfaces 1.1 and 1.2
   bigip_vlan:
-      tagged_interfaces:
-          - 1.1
-          - 1.2
-      name: "net1"
-      password: "secret"
-      server: "lb.mydomain.com"
-      tag: "1234"
-      user: "admin"
-      validate_certs: "no"
+    tagged_interfaces:
+      - 1.1
+      - 1.2
+    name: net1
+    tag: 1234
+    provider:
+      user: admin
+      password: secret
+      server: lb.mydomain.com
   delegate_to: localhost
 '''
 
@@ -195,6 +229,36 @@ dag_tunnel:
   returned: changed
   type: string
   sample: outer
+source_check:
+  description: The new Source Check setting.
+  returned: changed
+  type: bool
+  sample: yes
+fail_safe:
+  description: The new Fail Safe setting.
+  returned: changed
+  type: bool
+  sample: no
+fail_safe_timeout:
+  description: The new Fail Safe Timeout setting.
+  returned: changed
+  type: int
+  sample: 90
+fail_safe_action:
+  description: The new Fail Safe Action setting.
+  returned: changed
+  type: string
+  sample: reboot
+sflow_poll_interval:
+  description: The new sFlow Polling Interval setting.
+  returned: changed
+  type: int
+  sample: 10
+sflow_sampling_rate:
+  description: The new sFlow Sampling Rate setting.
+  returned: changed
+  type: int
+  sample: 20
 '''
 
 from ansible.module_utils.basic import AnsibleModule
@@ -210,6 +274,7 @@ try:
     from library.module_utils.network.f5.common import transform_name
     from library.module_utils.network.f5.common import exit_json
     from library.module_utils.network.f5.common import fail_json
+    from library.module_utils.network.f5.common import flatten_boolean
 except ImportError:
     from ansible.module_utils.network.f5.bigip import F5RestClient
     from ansible.module_utils.network.f5.common import F5ModuleError
@@ -220,6 +285,7 @@ except ImportError:
     from ansible.module_utils.network.f5.common import transform_name
     from ansible.module_utils.network.f5.common import exit_json
     from ansible.module_utils.network.f5.common import fail_json
+    from ansible.module_utils.network.f5.common import flatten_boolean
 
 
 class Parameters(AnsibleF5Parameters):
@@ -228,24 +294,72 @@ class Parameters(AnsibleF5Parameters):
         'dagTunnel': 'dag_tunnel',
         'dagRoundRobin': 'dag_round_robin',
         'interfacesReference': 'interfaces',
+        'sourceChecking': 'source_check',
+        'failsafe': 'fail_safe',
+        'failsafeAction': 'fail_safe_action',
+        'failsafeTimeout': 'fail_safe_timeout',
     }
 
+    api_attributes = [
+        'description',
+        'interfaces',
+        'tag',
+        'mtu',
+        'cmpHash',
+        'dagTunnel',
+        'dagRoundRobin',
+        'sourceChecking',
+        'failsafe',
+        'failsafeAction',
+        'failsafeTimeout',
+        'sflow',
+    ]
+
     updatables = [
-        'tagged_interfaces', 'untagged_interfaces', 'tag',
-        'description', 'mtu', 'cmp_hash', 'dag_tunnel',
+        'tagged_interfaces',
+        'untagged_interfaces',
+        'tag',
+        'description',
+        'mtu',
+        'cmp_hash',
+        'dag_tunnel',
         'dag_round_robin',
+        'source_check',
+        'fail_safe',
+        'fail_safe_action',
+        'fail_safe_timeout',
+        'sflow_poll_interval',
+        'sflow_sampling_rate',
+        'sflow',
     ]
 
     returnables = [
-        'description', 'partition', 'tag', 'interfaces',
-        'tagged_interfaces', 'untagged_interfaces', 'mtu',
-        'cmp_hash', 'dag_tunnel', 'dag_round_robin',
+        'description',
+        'partition',
+        'tag',
+        'interfaces',
+        'tagged_interfaces',
+        'untagged_interfaces',
+        'mtu',
+        'cmp_hash',
+        'dag_tunnel',
+        'dag_round_robin',
+        'source_check',
+        'fail_safe',
+        'fail_safe_action',
+        'fail_safe_timeout',
+        'sflow_poll_interval',
+        'sflow_sampling_rate',
+        'sflow',
     ]
 
-    api_attributes = [
-        'description', 'interfaces', 'tag', 'mtu', 'cmpHash',
-        'dagTunnel', 'dagRoundRobin',
-    ]
+    @property
+    def source_check(self):
+        return flatten_boolean(self._values['source_check'])
+
+    @property
+    def fail_safe(self):
+        return flatten_boolean(self._values['fail_safe'])
 
 
 class ApiParameters(Parameters):
@@ -281,6 +395,20 @@ class ApiParameters(Parameters):
         result = [str(x['name']) for x in self.interfaces if 'untagged' in x and x['untagged'] is True]
         result = sorted(result)
         return result
+
+    @property
+    def sflow_poll_interval(self):
+        try:
+            return self._values['sflow']['pollInterval']
+        except (KeyError, TypeError):
+            return None
+
+    @property
+    def sflow_sampling_rate(self):
+        try:
+            return self._values['sflow']['samplingRate']
+        except (KeyError, TypeError):
+            return None
 
 
 class ModuleParameters(Parameters):
@@ -350,7 +478,21 @@ class Changes(Parameters):
 
 
 class UsableChanges(Changes):
-    pass
+    @property
+    def source_check(self):
+        if self._values['source_check'] is None:
+            return None
+        if self._values['source_check'] == 'yes':
+            return 'enabled'
+        return 'disabled'
+
+    @property
+    def fail_safe(self):
+        if self._values['fail_safe'] is None:
+            return None
+        if self._values['fail_safe'] == 'yes':
+            return 'enabled'
+        return 'disabled'
 
 
 class ReportableChanges(Changes):
@@ -369,6 +511,32 @@ class ReportableChanges(Changes):
         result = [str(x['name']) for x in self.interfaces if 'untagged' in x and x['untagged'] is True]
         result = sorted(result)
         return result
+
+    @property
+    def source_check(self):
+        return flatten_boolean(self._values['source_check'])
+
+    @property
+    def fail_safe(self):
+        return flatten_boolean(self._values['fail_safe'])
+
+    @property
+    def sflow(self):
+        return None
+
+    @property
+    def sflow_poll_interval(self):
+        try:
+            return self._values['sflow']['pollInterval']
+        except (KeyError, TypeError):
+            return None
+
+    @property
+    def sflow_sampling_rate(self):
+        try:
+            return self._values['sflow']['samplingRate']
+        except (KeyError, TypeError):
+            return None
 
 
 class Difference(object):
@@ -425,6 +593,38 @@ class Difference(object):
         else:
             return None
         return result
+
+    @property
+    def sflow(self):
+        result = {}
+        s = self.sflow_poll_interval
+        if s:
+            result.update(s)
+        s = self.sflow_sampling_rate
+        if s:
+            result.update(s)
+        if result:
+            return dict(
+                sflow=result
+            )
+
+    @property
+    def sflow_poll_interval(self):
+        if self.want.sflow_poll_interval is None:
+            return None
+        if self.want.sflow_poll_interval != self.have.sflow_poll_interval:
+            return dict(
+                pollInterval=self.want.sflow_poll_interval
+            )
+
+    @property
+    def sflow_sampling_rate(self):
+        if self.want.sflow_sampling_rate is None:
+            return None
+        if self.want.sflow_sampling_rate != self.have.sflow_sampling_rate:
+            return dict(
+                samplingRate=self.want.sflow_sampling_rate
+            )
 
 
 class ModuleManager(object):
@@ -638,6 +838,14 @@ class ArgumentSpec(object):
                 choices=['inner', 'outer']
             ),
             dag_round_robin=dict(type='bool'),
+            source_check=dict(type='bool'),
+            fail_safe=dict(type='bool'),
+            fail_safe_timeout=dict(type='int'),
+            fail_safe_action=dict(
+                choices=['reboot', 'restart-all']
+            ),
+            sflow_poll_interval=dict(type='int'),
+            sflow_sampling_rate=dict(type='int'),
             state=dict(
                 default='present',
                 choices=['present', 'absent']
@@ -645,7 +853,7 @@ class ArgumentSpec(object):
             partition=dict(
                 default='Common',
                 fallback=(env_fallback, ['F5_PARTITION'])
-            )
+            ),
         )
         self.argument_spec = {}
         self.argument_spec.update(f5_argument_spec)

@@ -282,23 +282,17 @@ try:
     from library.module_utils.network.f5.bigip import F5RestClient
     from library.module_utils.network.f5.common import F5ModuleError
     from library.module_utils.network.f5.common import AnsibleF5Parameters
-    from library.module_utils.network.f5.common import cleanup_tokens
     from library.module_utils.network.f5.common import fq_name
     from library.module_utils.network.f5.common import f5_argument_spec
     from library.module_utils.network.f5.common import transform_name
-    from library.module_utils.network.f5.common import exit_json
-    from library.module_utils.network.f5.common import fail_json
     from library.module_utils.compat.ipaddress import ip_address
 except ImportError:
     from ansible.module_utils.network.f5.bigip import F5RestClient
     from ansible.module_utils.network.f5.common import F5ModuleError
     from ansible.module_utils.network.f5.common import AnsibleF5Parameters
-    from ansible.module_utils.network.f5.common import cleanup_tokens
     from ansible.module_utils.network.f5.common import fq_name
     from ansible.module_utils.network.f5.common import f5_argument_spec
     from ansible.module_utils.network.f5.common import transform_name
-    from ansible.module_utils.network.f5.common import exit_json
-    from ansible.module_utils.network.f5.common import fail_json
     from ansible.module_utils.compat.ipaddress import ip_address
 
 
@@ -478,17 +472,17 @@ class ModuleParameters(Parameters):
             return []
         try:
             result = re.findall(r'/\w+/[^\s}]+', self._values['monitors'])
-            result.sort()
-            return result
         except Exception:
-            return self._values['monitors']
+            result = self._values['monitors']
+        result.sort()
+        return result
 
     @property
     def monitors(self):
         if self._values['monitors'] is None:
             return None
         if len(self._values['monitors']) == 1 and self._values['monitors'][0] == '':
-            return 'default'
+            return '/Common/none'
         monitors = [fq_name(self.partition, x) for x in self.monitors_list]
         if self.availability_requirement_type == 'at_least':
             if self.at_least > len(self.monitors_list):
@@ -623,10 +617,10 @@ class ApiParameters(Parameters):
             return []
         try:
             result = re.findall(r'/\w+/[^\s}]+', self._values['monitors'])
-            result.sort()
-            return result
         except Exception:
-            return self._values['monitors']
+            result = self._values['monitors']
+        result.sort()
+        return result
 
     @property
     def monitors(self):
@@ -700,18 +694,18 @@ class Difference(object):
                 raise F5ModuleError(
                     "A single monitor must be specified if more than one monitor currently exists on your pool."
                 )
-
         if self.want.monitors is None:
             return None
         if self.want.monitors == 'default' and self.have.monitors == 'default':
             return None
         if self.want.monitors == 'default' and self.have.monitors is None:
             return None
+        if self.want.monitors == '/Common/none' and self.have.monitors == '/Common/none':
+            return None
         if self.want.monitors == 'default' and len(self.have.monitors) > 0:
             return 'default'
         if self.have.monitors is None:
             return self.want.monitors
-
         if self.have.monitors != self.want.monitors:
             return self.want.monitors
 
@@ -755,6 +749,7 @@ class ModuleManager(object):
         self.have = None
         self.want = ModuleParameters(params=self.module.params)
         self.changes = UsableChanges()
+        self.client = F5RestClient(**self.module.params)
 
     def _set_changed_options(self):
         changed = {}
@@ -777,7 +772,6 @@ class ModuleManager(object):
                     changed.update(change)
                 else:
                     changed[k] = change
-        import q; q.q(changed)
         if changed:
             self.changes = UsableChanges(params=changed)
             return True
@@ -1032,7 +1026,6 @@ class ModuleManager(object):
 
     def create_on_device(self):
         params = self.changes.api_params()
-        import q; q.q(params)
         params['name'] = self.want.name
         params['partition'] = self.want.partition
         uri = "https://{0}:{1}/mgmt/tm/ltm/node/".format(
@@ -1147,14 +1140,11 @@ def main():
     )
 
     try:
-        client = F5RestClient(**module.params)
-        mm = ModuleManager(module=module, client=client)
+        mm = ModuleManager(module=module)
         results = mm.exec_module()
-        cleanup_tokens(client)
-        exit_json(module, results, client)
+        module.exit_json(**results)
     except F5ModuleError as ex:
-        cleanup_tokens(client)
-        fail_json(module, ex, client)
+        module.fail_json(msg=str(ex))
 
 
 if __name__ == '__main__':
