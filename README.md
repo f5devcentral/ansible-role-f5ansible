@@ -98,6 +98,15 @@ There are many more examples located at in the ``EXAMPLES`` within each module.
 
 Apache 2.0
 
+## Releases
+
+This role is updated in Ansible Galaxy on a bi-weekly basis. If you want to install
+an interim release of this role, use the following ``ansible-galaxy`` command
+
+    ansible-galaxy install f5devcentral.f5ansible,master
+
+Note the inclusion of the "comma" and "master" at the end of the command. 
+
 ## Author Information
 
 F5 Networks
