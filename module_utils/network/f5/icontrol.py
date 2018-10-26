@@ -85,6 +85,8 @@ print(resp.json())
 ```
 """
 
+from ansible.module_utils.six.moves.urllib.error import HTTPError
+
 
 class Response(object):
     def __init__(self):
@@ -94,6 +96,7 @@ class Response(object):
         self.url = None
         self.reason = None
         self.request = None
+        self.msg = None
 
     @property
     def content(self):
@@ -104,7 +107,7 @@ class Response(object):
         return self._content
 
     def json(self):
-        return _json.loads(self._content)
+        return _json.loads(self._content or 'null')
 
     @property
     def ok(self):
@@ -125,7 +128,7 @@ class iControlRestSession(object):
     This acts as a loose wrapper around Ansible's ``Request`` class. We're doing
     this as interim work until we move to the httpapi connector.
     """
-    def __init__(self, headers=None, use_proxy=True, force=False, timeout=10,
+    def __init__(self, headers=None, use_proxy=True, force=False, timeout=120,
                  validate_certs=True, url_username=None, url_password=None,
                  http_agent=None, force_basic_auth=False, follow_redirects='urllib2',
                  client_cert=None, client_key=None, cookies=None):
@@ -145,6 +148,19 @@ class iControlRestSession(object):
             cookies=cookies
         )
         self.last_url = None
+
+    def get_headers(self, result):
+        try:
+            return dict(result.getheaders())
+        except AttributeError:
+            return result.headers
+
+    def update_response(self, response, result):
+        response.headers = self.get_headers(result)
+        response._content = result.read()
+        response.status = result.getcode()
+        response.url = result.geturl()
+        response.msg = "OK (%s bytes)" % response.headers.get('Content-Length', 'unknown')
 
     def send(self, method, url, **kwargs):
         response = Response()
@@ -166,27 +182,43 @@ class iControlRestSession(object):
                 body = body.encode('utf-8')
         if data:
             body = data
-        kwargs['data'] = body
+        if body:
+            kwargs['data'] = body
 
         try:
             result = self.request.open(method, url, **kwargs)
-            try:
-                response.headers = dict(result.getheaders())
-            except AttributeError:
-                response.headers = result.headers
-            response._content = result.read()
-            response.status = result.getcode()
-            response.url = result.geturl()
-            response.msg = "OK (%s bytes)" % result.headers.get('Content-Length', 'unknown')
-        except Exception as e:
-            try:
-                response._content = e.read()
-                response.status_code = e.code
-            except AttributeError:
-                response._content = ''
-                response.status_code = '-1'
+        except HTTPError as e:
+            # Catch HTTPError delivered from Ansible
+            #
+            # The structure of this object, in Ansible 2.8 is
+            #
+            # HttpError {
+            #   args
+            #   characters_written
+            #   close
+            #   code
+            #   delete
+            #   errno
+            #   file
+            #   filename
+            #   filename2
+            #   fp
+            #   getcode
+            #   geturl
+            #   hdrs
+            #   headers
+            #   info
+            #   msg
+            #   name
+            #   reason
+            #   strerror
+            #   url
+            #   with_traceback
+            # }
+            self.update_response(response, e)
+            return response
 
-            response.reason = to_native(e)
+        self.update_response(response, result)
         return response
 
     def delete(self, url, **kwargs):
@@ -210,11 +242,14 @@ class iControlRestSession(object):
         token = self.request.headers.get('X-F5-Auth-Token', None)
         if not token:
             return
-        p = generic_urlparse(urlparse(self.last_url))
-        uri = "https://{0}:{1}/mgmt/shared/authz/tokens/{2}".format(
-            p['hostname'], p['port'], token
-        )
-        self.delete(uri)
+        try:
+            p = generic_urlparse(urlparse(self.last_url))
+            uri = "https://{0}:{1}/mgmt/shared/authz/tokens/{2}".format(
+                p['hostname'], p['port'], token
+            )
+            self.delete(uri)
+        except ValueError:
+            pass
 
 
 def download_file(client, url, dest):
