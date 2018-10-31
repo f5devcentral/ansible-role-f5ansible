@@ -1,7 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2017 F5 Networks Inc.
+# Copyright: (c) 2017, F5 Networks Inc.
 # GNU General Public License v3.0 (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 from __future__ import absolute_import, division, print_function
@@ -10,7 +10,7 @@ __metaclass__ = type
 
 ANSIBLE_METADATA = {'metadata_version': '1.1',
                     'status': ['preview'],
-                    'supported_by': 'community'}
+                    'supported_by': 'certified'}
 
 DOCUMENTATION = r'''
 ---
@@ -51,45 +51,50 @@ EXAMPLES = r'''
 - name: Create partition "foo" using the default route domain
   bigip_partition:
     name: foo
-    password: secret
-    server: lb.mydomain.com
-    user: admin
+    provider:
+      password: secret
+      server: lb.mydomain.com
+      user: admin
   delegate_to: localhost
 
 - name: Create partition "bar" using a custom route domain
   bigip_partition:
     name: bar
     route_domain: 3
-    password: secret
-    server: lb.mydomain.com
-    user: admin
+    provider:
+      password: secret
+      server: lb.mydomain.com
+      user: admin
   delegate_to: localhost
 
 - name: Change route domain of partition "foo"
   bigip_partition:
     name: foo
     route_domain: 8
-    password: secret
-    server: lb.mydomain.com
-    user: admin
+    provider:
+      password: secret
+      server: lb.mydomain.com
+      user: admin
   delegate_to: localhost
 
 - name: Set a description for partition "foo"
   bigip_partition:
     name: foo
     description: Tenant CompanyA
-    password: secret
-    server: lb.mydomain.com
-    user: admin
+    provider:
+      password: secret
+      server: lb.mydomain.com
+      user: admin
   delegate_to: localhost
 
 - name: Delete the "foo" partition
   bigip_partition:
     name: foo
-    password: secret
-    server: lb.mydomain.com
-    user: admin
     state: absent
+    provider:
+      password: secret
+      server: lb.mydomain.com
+      user: admin
   delegate_to: localhost
 '''
 
@@ -406,7 +411,6 @@ class ArgumentSpec(object):
 
 
 def main():
-    client = None
     spec = ArgumentSpec()
 
     module = AnsibleModule(

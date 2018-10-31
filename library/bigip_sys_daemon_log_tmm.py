@@ -10,7 +10,7 @@ __metaclass__ = type
 
 ANSIBLE_METADATA = {'metadata_version': '1.1',
                     'status': ['preview'],
-                    'supported_by': 'community'}
+                    'supported_by': 'certified'}
 
 DOCUMENTATION = r'''
 ---
@@ -176,11 +176,6 @@ layer4_log_level:
   returned: changed
   type: string
   sample: notice
-net_log_level:
-  description: Lowest level of network messages from the tmm daemon to log.
-  returned: changed
-  type: string
-  sample: critical
 net_log_level:
   description: Lowest level of network messages from the tmm daemon to log.
   returned: changed

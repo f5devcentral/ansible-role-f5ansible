@@ -10,7 +10,7 @@ __metaclass__ = type
 
 ANSIBLE_METADATA = {'metadata_version': '1.1',
                     'status': ['preview'],
-                    'supported_by': 'community'}
+                    'supported_by': 'certified'}
 
 DOCUMENTATION = r'''
 ---
@@ -65,11 +65,18 @@ options:
     description:
       - Specifies the algorithm to use for IKE encryption.
     choices:
-      - null
+      - none
       - 3des
       - aes128
       - aes192
       - aes256
+      - aes-gmac256
+      - aes-gmac192
+      - aes-gmac128
+      - aes-gcm256
+      - aes-gcm192
+      - aes-gcm256
+      - aes-gcm128
   route_domain:
     description:
       - Specifies the route domain, when C(interface) is selected for the C(mode) setting.
@@ -95,6 +102,7 @@ options:
         compression algorithm.
     choices:
       - none
+      - "null"
       - deflate
   lifetime:
     description:
