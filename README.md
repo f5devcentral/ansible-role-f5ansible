@@ -21,11 +21,34 @@ pip install f5-sdk --upgrade
 
 ## Installation
 
-To install the F5 Networks Ansible Role, please issue the command on the machine you will
-run Ansible from.
+This role is released in two forms.
+
+* daily
+* bi-weekly
+
+The form that you choose should be based on your tolerance for unstable code. F5 makes
+**no** guarantees that the bi-weekly release is more stable. However, it aligns with
+some individual's tolerance for product updates.
+ 
+For instance, updating daily can be a burden to the maintainer of the playbooks and
+can introduce problems at a time that is untenable for them. In this case, a bi-weekly
+update is more logical.
+
+On the other hand, some people prefer to live on the edge of technology, and for those
+people, a daily build is acceptable. 
+
+To install the bi-weekly build of the F5 Networks Ansible Role, please issue the command
+on the machine you will run Ansible from.
 
 ```
 ansible-galaxy install -f f5devcentral.f5ansible
+```
+
+To install the daily build of the F5 Networks Ansible Role, please issue the command
+on the machine you will run Ansible from.
+
+```
+ansible-galaxy install -f f5devcentral.f5ansible,master
 ```
 
 For more information please visit http://docs.ansible.com/ansible/galaxy.html
