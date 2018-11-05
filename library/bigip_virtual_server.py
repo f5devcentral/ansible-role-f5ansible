@@ -279,6 +279,21 @@ options:
       - When creating a new virtual server, the default is C(enabled).
     type: bool
     version_added: 2.6
+  source_port:
+    description:
+      - Specifies whether the system preserves the source port of the connection.
+      - When creating a new virtual server, if this parameter is not specified, the default is C(preserve).
+    choices:
+      - preserve
+      - preserve-strict
+      - change
+    version_added: 2.8
+  mirror:
+    description:
+      - Specifies that the system mirrors connections on each member of a redundant pair.
+      - When creating a new virtual server, if this parameter is not specified, the default is C(disabled).
+    type: bool
+    version_added: 2.8 
   ip_protocol:
     description:
       - Specifies a network protocol name you want the system to use to direct traffic
@@ -364,6 +379,7 @@ options:
 extends_documentation_fragment: f5
 author:
   - Tim Rupp (@caphrim007)
+  - Wojciech Wypior (@wojtek0806)
 '''
 
 EXAMPLES = r'''
@@ -608,6 +624,16 @@ port_translation:
   returned: changed
   type: bool
   sample: True
+source_port:
+  description: Specifies whether the system preserves the source port of the connection.
+  returned: changed
+  type: string
+  sample: change
+mirror:
+  description: Specifies that the system mirrors connections on each member of a redundant pair.
+  returned: changed
+  type: bool
+  sample: True
 ip_protocol:
   description: The new value of the IP protocol.
   returned: changed
@@ -652,6 +678,7 @@ try:
     from library.module_utils.network.f5.common import transform_name
     from library.module_utils.network.f5.common import mark_managed_by
     from library.module_utils.network.f5.common import only_has_managed_metadata
+    from library.module_utils.network.f5.common import flatten_boolean
     from library.module_utils.network.f5.compare import cmp_simple_list
     from library.module_utils.network.f5.ipaddress import is_valid_ip
     from library.module_utils.network.f5.ipaddress import ip_interface
@@ -670,6 +697,7 @@ except ImportError:
     from ansible.module_utils.network.f5.common import transform_name
     from ansible.module_utils.network.f5.common import mark_managed_by
     from ansible.module_utils.network.f5.common import only_has_managed_metadata
+    from ansible.module_utils.network.f5.common import flatten_boolean
     from ansible.module_utils.network.f5.compare import cmp_simple_list
     from ansible.module_utils.network.f5.ipaddress import is_valid_ip
     from ansible.module_utils.network.f5.ipaddress import ip_interface
@@ -693,6 +721,7 @@ class Parameters(AnsibleF5Parameters):
         'fwStagedPolicy': 'firewall_staged_policy',
         'securityLogProfiles': 'security_log_profiles',
         'securityNatPolicy': 'security_nat_policy',
+        'sourcePort': 'source_port',
     }
 
     api_attributes = [
@@ -725,6 +754,8 @@ class Parameters(AnsibleF5Parameters):
         'fwStagedPolicy',
         'securityLogProfiles',
         'securityNatPolicy',
+        'sourcePort',
+        'mirror',
     ]
 
     updatables = [
@@ -751,6 +782,8 @@ class Parameters(AnsibleF5Parameters):
         'firewall_staged_policy',
         'security_log_profiles',
         'security_nat_policy',
+        'source_port',
+        'mirror',
     ]
 
     returnables = [
@@ -781,6 +814,8 @@ class Parameters(AnsibleF5Parameters):
         'firewall_staged_policy',
         'security_log_profiles',
         'security_nat_policy',
+        'source_port',
+        'mirror',
     ]
 
     profiles_mutex = [
@@ -1390,6 +1425,15 @@ class ModuleParameters(Parameters):
         return result
 
     @property
+    def route_domain(self):
+        if self._values['destination'] is None:
+            return None
+        result = self._values['destination'].split("%")
+        if len(result) > 1:
+            return int(result[1])
+        return None
+
+    @property
     def destination_tuple(self):
         Destination = namedtuple('Destination', ['ip', 'port', 'route_domain'])
         if self._values['destination'] is None:
@@ -1705,6 +1749,15 @@ class ModuleParameters(Parameters):
             return result
         return None
 
+    @property
+    def mirror(self):
+        result = flatten_boolean(self._values['mirror'])
+        if result is None:
+            return None
+        if result == 'yes':
+            return 'enabled'
+        return 'disabled'
+
 
 class Changes(Parameters):
     pass
@@ -1828,6 +1881,14 @@ class UsableChanges(Changes):
 
 
 class ReportableChanges(Changes):
+    @property
+    def mirror(self):
+        if self._values['mirror'] is None:
+            return None
+        elif self._values['mirror'] == 'enabled':
+            return 'yes'
+        return 'no'
+
     @property
     def snat(self):
         if self._values['snat'] is None:
@@ -3017,6 +3078,11 @@ class ArgumentSpec(object):
             ),
             address_translation=dict(type='bool'),
             port_translation=dict(type='bool'),
+            source_port=dict(
+                choices=[
+                    'preserve', 'preserve-strict', 'change'
+                ]
+            ),
             ip_protocol=dict(
                 choices=[
                     'ah', 'any', 'bna', 'esp', 'etherip', 'gre', 'icmp', 'ipencap', 'ipv6',
@@ -3031,6 +3097,7 @@ class ArgumentSpec(object):
                     'performance-http', 'performance-l4', 'reject', 'stateless', 'dhcp'
                 ]
             ),
+            mirror=dict(type='bool'),
             firewall_staged_policy=dict(),
             firewall_enforced_policy=dict(),
             security_log_profiles=dict(type='list'),

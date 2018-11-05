@@ -2771,6 +2771,24 @@ ltm_pools:
       returned: changed
       type: int
       sample: 0
+    real_session:
+      description:
+        - The actual REST API value for the C(session) attribute.
+        - This is different from the C(state) return value, insofar as the return value
+          can be considered a generalization of all available sessions, instead of the
+          specific value of the session.
+      returned: changed
+      type: string
+      sample: monitor-enabled
+    real_state:
+      description:
+        - The actual REST API value for the C(state) attribute.
+        - This is different from the C(state) return value, insofar as the return value
+          can be considered a generalization of all available states, instead of the
+          specific value of the state.
+      returned: changed
+      type: string
+      sample: up
     reselect_tries:
       description:
         - The number of times the system tries to contact a pool member after a passive failure.
@@ -5734,6 +5752,7 @@ try:
     from library.module_utils.network.f5.common import transform_name
     from library.module_utils.network.f5.ipaddress import is_valid_ip
     from library.module_utils.network.f5.icontrol import modules_provisioned
+    from library.module_utils.network.f5.urls import parseStats
 except ImportError:
     from ansible.module_utils.network.f5.bigip import F5RestClient
     from ansible.module_utils.network.f5.common import F5ModuleError
@@ -5745,68 +5764,7 @@ except ImportError:
     from ansible.module_utils.network.f5.common import transform_name
     from ansible.module_utils.network.f5.ipaddress import is_valid_ip
     from ansible.module_utils.network.f5.icontrol import modules_provisioned
-
-
-def parseStats(entry):
-    if 'description' in entry:
-        return entry['description']
-    elif 'value' in entry:
-        return entry['value']
-    elif 'entries' in entry or 'nestedStats' in entry and 'entries' in entry['nestedStats']:
-        if 'entries' in entry:
-            entries = entry['entries']
-        else:
-            entries = entry['nestedStats']['entries']
-        result = None
-
-        for name in entries:
-            entry = entries[name]
-            if 'https://localhost' in name:
-                name = name.split('/')
-                name = name[-1]
-                if result and isinstance(result, list):
-                    result.append(parseStats(entry))
-                elif result and isinstance(result, dict):
-                    result[name] = parseStats(entry)
-                else:
-                    try:
-                        int(name)
-                        result = list()
-                        result.append(parseStats(entry))
-                    except ValueError:
-                        result = dict()
-                        result[name] = parseStats(entry)
-            else:
-                if '.' in name:
-                    names = name.split('.')
-                    key = names[0]
-                    value = names[1]
-                    if result is None:
-                        # result can be None if this branch is reached first
-                        #
-                        # For example, the mgmt/tm/net/trunk/NAME/stats API
-                        # returns counters.bitsIn before anything else.
-                        result = dict()
-                        result[key] = dict()
-                    elif key not in result:
-                        result[key] = dict()
-                    elif result[key] is None:
-                        result[key] = dict()
-                    result[key][value] = parseStats(entry)
-                else:
-                    if result and isinstance(result, list):
-                        result.append(parseStats(entry))
-                    elif result and isinstance(result, dict):
-                        result[name] = parseStats(entry)
-                    else:
-                        try:
-                            int(name)
-                            result = list()
-                            result.append(parseStats(entry))
-                        except ValueError:
-                            result = dict()
-                            result[name] = parseStats(entry)
-        return result
+    from ansible.module_utils.network.f5.urls import parseStats
 
 
 class BaseManager(object):
@@ -9593,10 +9551,15 @@ class LtmPoolsParameters(BaseParameters):
             session = member.pop('session')
             state = member.pop('state')
 
-            if state in ['user-up', 'unchecked', 'fqdn-up-no-addr'] and session in ['user-enabled']:
+            member['real_session'] = session
+            member['real_state'] = state
+
+            if state in ['user-up', 'unchecked', 'fqdn-up-no-addr', 'fqdn-up'] and session in ['user-enabled']:
                 member['state'] = 'present'
             elif state in ['user-down'] and session in ['user-disabled']:
                 member['state'] = 'forced_offline'
+            elif state in ['up', 'checking'] and session in ['monitor-enabled']:
+                member['state'] = 'present'
             elif state in ['down'] and session in ['monitor-enabled']:
                 member['state'] = 'offline'
             else:
