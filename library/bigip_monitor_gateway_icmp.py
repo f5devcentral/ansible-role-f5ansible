@@ -14,32 +14,59 @@ ANSIBLE_METADATA = {'metadata_version': '1.1',
 
 DOCUMENTATION = r'''
 ---
-module: bigip_monitor_dns
-short_description: Manage DNS monitors on a BIG-IP
+module: bigip_monitor_gateway_icmp
+short_description: Manages F5 BIG-IP LTM gateway ICMP monitors
 description:
-  - Manages DNS monitors on a BIG-IP.
-version_added: 2.7
+  - Manages gateway ICMP monitors on a BIG-IP.
+version_added: 2.8
 options:
   name:
     description:
-      - Specifies the name of the monitor.
+      - Monitor name.
     required: True
   parent:
     description:
       - The parent template of this monitor template. Once this value has
-        been set, it cannot be changed. By default, this value is the C(dns)
-        parent on the C(Common) partition.
-    default: /Common/dns
+        been set, it cannot be changed. By default, this value is the
+        C(gateway_icmp) parent on the C(Common) partition.
+    default: /Common/gateway_icmp
   description:
     description:
       - The description of the monitor.
+  ip:
+    description:
+      - IP address part of the IP/port definition. If this parameter is not
+        provided when creating a new monitor, then the default value will be
+        '*'.
+  port:
+    description:
+      - Port address part of the IP/port definition. If this parameter is not
+        provided when creating a new monitor, then the default value will be
+        '*'. Note that if specifying an IP address, a value between 1 and 65535
+        must be specified.
   interval:
     description:
-      - The interval specifying how frequently the monitor instance of this
-        template will run.
-      - This value B(must) be less than the C(timeout) value.
-      - When creating a new monitor, if this parameter is not provided, the
-        default C(5) will be used.
+      - Specifies, in seconds, the frequency at which the system issues the
+        monitor check when either the resource is down or the status of the
+        resource is unknown.
+  timeout:
+    description:
+      - Specifies the number of seconds the target has in which to respond to
+        the monitor request.
+      - If the target responds within the set time period, it is considered 'up'.
+        If the target does not respond within the set time period, it is considered
+        'down'. When this value is set to 0 (zero), the system uses the interval
+        from the parent monitor.
+      - Note that C(timeout) and C(time_until_up) combine to control when a
+        resource is set to up.
+  time_until_up:
+    description:
+      - Specifies the number of seconds to wait after a resource first responds
+        correctly to the monitor before setting the resource to 'up'.
+      - During the interval, all responses from the resource must be correct.
+      - When the interval expires, the resource is marked 'up'.
+      - A value of 0, means that the resource is marked up immediately upon
+        receipt of the first correct response.
   up_interval:
     description:
       - Specifies the interval for the system to use to perform the health check
@@ -48,113 +75,17 @@ options:
         C(interval) to check the health of the resource.
       - When any other number, enables specification of a different interval to
         use when checking the health of a resource that is up.
-      - When creating a new monitor, if this parameter is not provided, the
-        default C(0) will be used.
-  timeout:
-    description:
-      - The number of seconds in which the node or service must respond to
-        the monitor request.
-      - If the target responds within the set time period, it is considered up.
-      - If the target does not respond within the set time period, it is considered down.
-      - You can change this number to any number you want, however, it should be 3 times the
-        interval number of seconds plus 1 second.
-      - If this parameter is not provided when creating a new monitor, then the default
-        value will be C(16).
-  transparent:
-    description:
-      - Specifies whether the monitor operates in transparent mode.
-      - Monitors in transparent mode can monitor pool members through firewalls.
-      - When creating a new monitor, if this parameter is not provided, then the default
-        value will be C(no).
-    type: bool
-  reverse:
-    description:
-      - Specifies whether the monitor operates in reverse mode.
-      - When the monitor is in reverse mode, a successful receive string match
-        marks the monitored object down instead of up. You can use the
-        this mode only if you configure the C(receive) option.
-      - This parameter is not compatible with the C(time_until_up) parameter. If
-        C(time_until_up) is specified, it must be C(0). Or, if it already exists, it
-        must be C(0).
-    type: bool
-  receive:
-    description:
-      - Specifies the IP address that the monitor uses from the resource record sections
-        of the DNS response.
-      - The IP address should be specified in the dotted-decimal notation or IPv6 notation.
-  time_until_up:
-    description:
-      - Specifies the amount of time in seconds after the first successful
-        response before a node will be marked up.
-      - A value of 0 will cause a node to be marked up immediately after a valid
-        response is received from the node.
-      - If this parameter is not provided when creating a new monitor, then the default
-        value will be C(0).
   manual_resume:
     description:
       - Specifies whether the system automatically changes the status of a resource
         to B(enabled) at the next successful monitor check.
       - If you set this option to C(yes), you must manually re-enable the resource
         before the system can use it for load balancing connections.
-      - When creating a new monitor, if this parameter is not specified, the default
-        value is C(no).
       - When C(yes), specifies that you must manually re-enable the resource after an
         unsuccessful monitor check.
       - When C(no), specifies that the system automatically changes the status of a
         resource to B(enabled) at the next successful monitor check.
     type: bool
-  ip:
-    description:
-      - IP address part of the IP/port definition.
-      - If this parameter is not provided when creating a new monitor, then the
-        default value will be C(*).
-  port:
-    description:
-      - Port address part of the IP/port definition.
-      - If this parameter is not provided when creating a new monitor, then the default
-        value will be C(*).
-      - Note that if specifying an IP address, a value between 1 and 65535 must be specified.
-  query_name:
-    description:
-      - Specifies a query name for the monitor to use in a DNS query.
-  query_type:
-    description:
-      - Specifies the type of DNS query that the monitor sends.
-      - When creating a new monitor, if this parameter is not specified, the default
-        value is C(a).
-      - When C(a), specifies that the monitor will send a DNS query of type A.
-      - When C(aaaa), specifies that the monitor will send a DNS query of type AAAA.
-    choices:
-      - a
-      - aaaa
-  answer_section_contains:
-    description:
-      - Specifies the type of DNS query that the monitor sends.
-      - When creating a new monitor, if this value is not specified, the default
-        value is C(query-type).
-      - When C(query-type), specifies that the response should contain at least one
-        answer of which the resource record type matches the query type.
-      - When C(any-type), specifies that the DNS message should contain at least one answer.
-      - When C(anything), specifies that an empty answer is enough to mark the status of
-        the node up.
-    choices:
-      - any-type
-      - anything
-      - query-type
-  accept_rcode:
-    description:
-      - Specifies the RCODE required in the response for an up status.
-      - When creating a new monitor, if this parameter is not specified, the default
-        value is C(no-error).
-      - When C(no-error), specifies that the status of the node will be marked up if
-        the received DNS message has no error.
-      - When C(anything), specifies that the status of the node will be marked up
-        irrespective of the RCODE in the DNS message received.
-      - If this parameter is set to C(anything), it will disregard the C(receive)
-        string, and nullify it if the monitor is being updated.
-    choices:
-      - no-error
-      - anything
   adaptive:
     description:
       - Specifies whether adaptive response time monitoring is enabled for this monitor.
@@ -196,6 +127,17 @@ options:
         uses to calculate the mean latency and standard deviation of a monitor probe.
       - While this value can be configured when C(adaptive) is C(no), it will not take
         effect on the system until C(adaptive) is C(yes).
+  transparent:
+    description:
+      - Specifies whether the monitor operates in transparent mode.
+      - A monitor in transparent mode directs traffic through the associated pool members
+        or nodes (usually a router or firewall) to the aliased destination (that is, it
+        probes the C(ip)-C(port) combination specified in the monitor).
+      - If the monitor cannot successfully reach the aliased destination, the pool member
+        or node through which the monitor traffic was sent is marked down.
+      - When creating a new monitor, if this parameter is not provided, then the default
+        value will be whatever is provided by the C(parent).
+    type: bool
   partition:
     description:
       - Device partition to manage resources on.
@@ -211,22 +153,20 @@ options:
 extends_documentation_fragment: f5
 author:
   - Tim Rupp (@caphrim007)
-  - Wojciech Wypior (@wojtek0806)
 '''
 
 EXAMPLES = r'''
-- name: Create a DNS monitor
-  bigip_monitor_dns:
-    name: DNS-UDP-V6
-    interval: 2
-    query_name: localhost
-    query_type: aaaa
-    up_interval: 5
+- name: Create a monitor
+  bigip_monitor_gateway_icmp:
+    name: gw1
     adaptive: no
-    password: secret
-    server: lb.mydomain.com
-    state: present
-    user: admin
+    interval: 1
+    time_until_up: 0
+    timeout: 3
+    provider:
+      password: secret
+      server: lb.mydomain.com
+      user: admin
   delegate_to: localhost
 '''
 
@@ -235,7 +175,7 @@ parent:
   description: New parent template of the monitor.
   returned: changed
   type: string
-  sample: http
+  sample: gateway-icmp
 ip:
   description: The new IP of IP/port definition.
   returned: changed
@@ -261,11 +201,6 @@ adaptive:
   returned: changed
   type: bool
   sample: yes
-accept_rcode:
-  description: RCODE required in the response for an up status.
-  returned: changed
-  type: string
-  sample: no-error
 allowed_divergence_type:
   description: Type of divergence used for adaptive response time monitoring.
   returned: changed
@@ -293,43 +228,11 @@ sampling_timespan:
   returned: changed
   type: int
   sample: 200
-answer_section_contains:
-  description: Type of DNS query that the monitor sends.
-  returned: changed
-  type: string
-  sample: query-type
-manual_resume:
-  description:
-    - Whether the system automatically changes the status of a resource to enabled at the
-      next successful monitor check.
-  returned: changed
-  type: string
-  sample: query-type
 up_interval:
   description: Interval for the system to use to perform the health check when a resource is up.
   returned: changed
   type: int
   sample: 0
-query_name:
-  description: Query name for the monitor to use in a DNS query.
-  returned: changed
-  type: string
-  sample: foo
-query_type:
-  description: Type of DNS query that the monitor sends. Either C(a) or C(aaaa).
-  returned: changed
-  type: string
-  sample: aaaa
-receive:
-  description: IP address that the monitor uses from the resource record sections of the DNS response.
-  returned: changed
-  type: string
-  sample: 2.3.2.4
-reverse:
-  description: Whether the monitor operates in reverse mode.
-  returned: changed
-  type: bool
-  sample: yes
 port:
   description:
     - Alias port or service for the monitor to check, on behalf of the pools or pool
@@ -354,13 +257,11 @@ try:
     from library.module_utils.network.f5.common import cleanup_tokens
     from library.module_utils.network.f5.common import fq_name
     from library.module_utils.network.f5.common import f5_argument_spec
-    from library.module_utils.network.f5.common import transform_name
     from library.module_utils.network.f5.common import exit_json
     from library.module_utils.network.f5.common import fail_json
+    from library.module_utils.network.f5.common import transform_name
     from library.module_utils.network.f5.common import flatten_boolean
     from library.module_utils.network.f5.ipaddress import is_valid_ip
-    from library.module_utils.network.f5.ipaddress import validate_ip_v6_address
-    from library.module_utils.network.f5.ipaddress import validate_ip_address
     from library.module_utils.network.f5.compare import cmp_str_with_none
 except ImportError:
     from ansible.module_utils.network.f5.bigip import F5RestClient
@@ -369,50 +270,36 @@ except ImportError:
     from ansible.module_utils.network.f5.common import cleanup_tokens
     from ansible.module_utils.network.f5.common import fq_name
     from ansible.module_utils.network.f5.common import f5_argument_spec
-    from ansible.module_utils.network.f5.common import transform_name
     from ansible.module_utils.network.f5.common import exit_json
     from ansible.module_utils.network.f5.common import fail_json
+    from ansible.module_utils.network.f5.common import transform_name
     from ansible.module_utils.network.f5.common import flatten_boolean
     from ansible.module_utils.network.f5.ipaddress import is_valid_ip
-    from ansible.module_utils.network.f5.ipaddress import validate_ip_v6_address
-    from ansible.module_utils.network.f5.ipaddress import validate_ip_address
     from ansible.module_utils.network.f5.compare import cmp_str_with_none
 
 
 class Parameters(AnsibleF5Parameters):
     api_map = {
-        'acceptRcode': 'accept_rcode',
         'adaptiveDivergenceType': 'allowed_divergence_type',
         'adaptiveDivergenceValue': 'allowed_divergence_value',
         'adaptiveLimit': 'adaptive_limit',
         'adaptiveSamplingTimespan': 'sampling_timespan',
-        'answerContains': 'answer_section_contains',
-        'manualResume': 'manual_resume',
         'timeUntilUp': 'time_until_up',
         'upInterval': 'up_interval',
-        'qname': 'query_name',
-        'qtype': 'query_type',
-        'recv': 'receive',
         'defaultsFrom': 'parent',
     }
 
     api_attributes = [
         'adaptive',
-        'acceptRcode',
         'adaptiveDivergenceType',
         'adaptiveDivergenceValue',
         'adaptiveLimit',
         'adaptiveSamplingTimespan',
-        'answerContains',
         'defaultsFrom',
         'description',
         'destination',
         'interval',
         'manualResume',
-        'qname',
-        'qtype',
-        'recv',
-        'reverse',
         'timeout',
         'timeUntilUp',
         'transparent',
@@ -422,20 +309,14 @@ class Parameters(AnsibleF5Parameters):
 
     returnables = [
         'adaptive',
-        'accept_rcode',
         'allowed_divergence_type',
         'allowed_divergence_value',
         'description',
         'adaptive_limit',
         'sampling_timespan',
-        'answer_section_contains',
         'manual_resume',
         'time_until_up',
         'up_interval',
-        'query_name',
-        'query_type',
-        'receive',
-        'reverse',
         'timeout',
         'interval',
         'transparent',
@@ -446,30 +327,21 @@ class Parameters(AnsibleF5Parameters):
 
     updatables = [
         'adaptive',
-        'accept_rcode',
         'allowed_divergence_type',
         'allowed_divergence_value',
         'adaptive_limit',
         'sampling_timespan',
-        'answer_section_contains',
         'description',
         'manual_resume',
         'time_until_up',
         'up_interval',
-        'query_name',
-        'query_type',
-        'receive',
-        'reverse',
         'timeout',
+        'interval',
         'transparent',
         'parent',
         'destination',
         'interval',
     ]
-
-    @property
-    def type(self):
-        return 'dns'
 
     @property
     def destination(self):
@@ -515,18 +387,6 @@ class Parameters(AnsibleF5Parameters):
             raise F5ModuleError(
                 "The provided 'ip' parameter is not an IP address."
             )
-
-    @property
-    def receive(self):
-        if self._values['receive'] is None:
-            return None
-        if self._values['receive'] == '':
-            return ''
-        if is_valid_ip(self._values['receive']):
-            return self._values['receive']
-        raise F5ModuleError(
-            "The specified 'receive' parameter must be either an IPv4 or v6 address."
-        )
 
     @property
     def port(self):
@@ -576,14 +436,6 @@ class ModuleParameters(Parameters):
         return 'disabled'
 
     @property
-    def reverse(self):
-        if self._values['reverse'] is None:
-            return None
-        elif self._values['reverse'] is True:
-            return 'enabled'
-        return 'disabled'
-
-    @property
     def transparent(self):
         if self._values['transparent'] is None:
             return None
@@ -622,10 +474,6 @@ class ReportableChanges(Changes):
         return flatten_boolean(self._values['manual_resume'])
 
     @property
-    def reverse(self):
-        return flatten_boolean(self._values['reverse'])
-
-    @property
     def transparent(self):
         return flatten_boolean(self._values['transparent'])
 
@@ -645,6 +493,15 @@ class Difference(object):
             return result
         except AttributeError:
             return self.__default(param)
+
+    def __default(self, param):
+        attr1 = getattr(self.want, param)
+        try:
+            attr2 = getattr(self.have, param)
+            if attr1 != attr2:
+                return attr1
+        except AttributeError:
+            return attr1
 
     @property
     def parent(self):
@@ -689,15 +546,6 @@ class Difference(object):
                 )
         if self.want.interval != self.have.interval:
             return self.want.interval
-
-    def __default(self, param):
-        attr1 = getattr(self.want, param)
-        try:
-            attr2 = getattr(self.have, param)
-            if attr1 != attr2:
-                return attr1
-        except AttributeError:
-            return attr1
 
     @property
     def description(self):
@@ -776,7 +624,7 @@ class ModuleManager(object):
             return self.create()
 
     def exists(self):
-        uri = "https://{0}:{1}/mgmt/tm/ltm/monitor/dns/{2}".format(
+        uri = "https://{0}:{1}/mgmt/tm/ltm/monitor/gateway-icmp/{2}".format(
             self.client.provider['server'],
             self.client.provider['server_port'],
             transform_name(self.want.partition, self.want.name)
@@ -790,42 +638,11 @@ class ModuleManager(object):
             return False
         return True
 
-    def _address_type_matches_query_type(self, type, validator):
-        if self.want.query_type == type and self.have.query_type == type:
-            if self.want.receive is not None and validator(self.want.receive):
-                return True
-            if self.have.receive is not None and validator(self.have.receive):
-                return True
-
     def update(self):
         self.have = self.read_current_from_device()
         if not self.should_update():
             return False
-        if self.want.reverse == 'enabled':
-            if not self.want.receive and not self.have.receive:
-                raise F5ModuleError(
-                    "A 'receive' string must be specified when setting 'reverse'."
-                )
-            if self.want.time_until_up != 0 and self.have.time_until_up != 0:
-                raise F5ModuleError(
-                    "Monitors with the 'reverse' attribute are not currently compatible with 'time_until_up'."
-                )
-        if self._address_type_matches_query_type('a', validate_ip_v6_address):
-            raise F5ModuleError(
-                "Monitor has a IPv6 address. Only a 'query_type' of 'aaaa' is supported for IPv6."
-            )
-        elif self._address_type_matches_query_type('aaaa', validate_ip_address):
-            raise F5ModuleError(
-                "Monitor has a IPv4 address. Only a 'query_type' of 'a' is supported for IPv4."
-            )
 
-        if self.want.accept_rcode == 'anything':
-            if self.want.receive is not None and is_valid_ip(self.want.receive) and self.have.receive is not None:
-                raise F5ModuleError(
-                    "No 'receive' string may be specified, or exist, when 'accept_rcode' is 'anything'."
-                )
-            elif self.want.receive is None and self.have.receive is not None:
-                self.want.update({'receive': ''})
         if self.module.check_mode:
             return True
         self.update_on_device()
@@ -841,37 +658,7 @@ class ModuleManager(object):
 
     def create(self):
         self._set_changed_options()
-        if self.want.reverse == 'enabled':
-            if self.want.time_until_up != 0:
-                raise F5ModuleError(
-                    "Monitors with the 'reverse' attribute are not currently compatible with 'time_until_up'."
-                )
-            if not self.want.receive:
-                raise F5ModuleError(
-                    "A 'receive' string must be specified when setting 'reverse'."
-                )
 
-        if self.want.receive is not None and validate_ip_v6_address(self.want.receive) and self.want.query_type == 'a':
-            raise F5ModuleError(
-                "Monitor has a IPv6 address. Only a 'query_type' of 'aaaa' is supported for IPv6."
-            )
-        elif self.want.receive is not None and validate_ip_address(self.want.receive) and self.want.query_type == 'aaaa':
-            raise F5ModuleError(
-                "Monitor has a IPv4 address. Only a 'query_type' of 'a' is supported for IPv4."
-            )
-
-        if self.want.accept_rcode == 'anything':
-            if self.want.receive is not None and is_valid_ip(self.want.receive):
-                raise F5ModuleError(
-                    "No 'receive' string may be specified, or exist, when 'accept_rcode' is 'anything'."
-                )
-            elif self.want.receive is None:
-                self.want.update({'receive': ''})
-
-        if self.want.query_name is None:
-            raise F5ModuleError(
-                "'query_name' is required when creating a new DNS monitor."
-            )
         if self.module.check_mode:
             return True
         self.create_on_device()
@@ -881,7 +668,7 @@ class ModuleManager(object):
         params = self.changes.api_params()
         params['name'] = self.want.name
         params['partition'] = self.want.partition
-        uri = "https://{0}:{1}/mgmt/tm/ltm/monitor/dns/".format(
+        uri = "https://{0}:{1}/mgmt/tm/ltm/monitor/gateway-icmp/".format(
             self.client.provider['server'],
             self.client.provider['server_port']
         )
@@ -899,7 +686,7 @@ class ModuleManager(object):
 
     def update_on_device(self):
         params = self.changes.api_params()
-        uri = "https://{0}:{1}/mgmt/tm/ltm/monitor/dns/{2}".format(
+        uri = "https://{0}:{1}/mgmt/tm/ltm/monitor/gateway-icmp/{2}".format(
             self.client.provider['server'],
             self.client.provider['server_port'],
             transform_name(self.want.partition, self.want.name)
@@ -922,7 +709,7 @@ class ModuleManager(object):
         return False
 
     def remove_from_device(self):
-        uri = "https://{0}:{1}/mgmt/tm/ltm/monitor/dns/{2}".format(
+        uri = "https://{0}:{1}/mgmt/tm/ltm/monitor/gateway-icmp/{2}".format(
             self.client.provider['server'],
             self.client.provider['server_port'],
             transform_name(self.want.partition, self.want.name)
@@ -932,7 +719,7 @@ class ModuleManager(object):
             return True
 
     def read_current_from_device(self):
-        uri = "https://{0}:{1}/mgmt/tm/ltm/monitor/dns/{2}".format(
+        uri = "https://{0}:{1}/mgmt/tm/ltm/monitor/gateway-icmp/{2}".format(
             self.client.provider['server'],
             self.client.provider['server_port'],
             transform_name(self.want.partition, self.want.name)
@@ -956,29 +743,21 @@ class ArgumentSpec(object):
         self.supports_check_mode = True
         argument_spec = dict(
             name=dict(required=True),
-            parent=dict(default='/Common/dns'),
-            receive=dict(),
+            parent=dict(default='/Common/gateway_icmp'),
             ip=dict(),
             description=dict(),
             port=dict(type='int'),
             interval=dict(type='int'),
             timeout=dict(type='int'),
-            manual_resume=dict(type='bool'),
-            reverse=dict(type='bool'),
-            transparent=dict(type='bool'),
             time_until_up=dict(type='int'),
             up_interval=dict(type='int'),
-            accept_rcode=dict(choices=['no-error', 'anything']),
+            manual_resume=dict(type='bool'),
             adaptive=dict(type='bool'),
-            sampling_timespan=dict(type='int'),
-            adaptive_limit=dict(type='int'),
-            answer_section_contains=dict(
-                choices=['any-type', 'anything', 'query-type']
-            ),
-            query_name=dict(),
-            query_type=dict(choices=['a', 'aaaa']),
             allowed_divergence_type=dict(choices=['relative', 'absolute']),
             allowed_divergence_value=dict(type='int'),
+            adaptive_limit=dict(type='int'),
+            sampling_timespan=dict(type='int'),
+            transparent=dict(type='bool'),
             state=dict(
                 default='present',
                 choices=['present', 'absent']
