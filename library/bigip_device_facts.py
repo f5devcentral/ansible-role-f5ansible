@@ -34,6 +34,8 @@ options:
       - profiles
       - asm-policy-stats
       - asm-policies
+      - asm-server-technologies
+      - asm-signature-sets
       - client-ssl-profiles
       - devices
       - device-groups
@@ -94,6 +96,8 @@ options:
       - "!profiles"
       - "!asm-policy-stats"
       - "!asm-policies"
+      - "!asm-server-technologies"
+      - "!asm-signature-sets"
       - "!client-ssl-profiles"
       - "!devices"
       - "!device-groups"
@@ -153,6 +157,7 @@ options:
 extends_documentation_fragment: f5
 author:
   - Tim Rupp (@caphrim007)
+  - Wojciech Wypior (@wojtek0806)
 '''
 
 EXAMPLES = r'''
@@ -464,6 +469,98 @@ asm_policies:
           returned: changed
           type: string
           sample: 1
+  sample: hash/dictionary of values
+asm_server_technologies:
+  description: Detailed facts for ASM server technologies present on device.
+  returned: When C(asm-server-technologies) is specified in C(gather_subset).
+  type: complex
+  contains:
+    id:
+      description:
+        - Displays the generated ID for the server technology resource.
+      returned: changed
+      type: string
+      sample: l0Ckxe-7yHsXp8U5tTgbFQ
+    server_technology_name:
+      description:
+        - Human friendly name of the server technology resource.
+      returned: changed
+      type: string
+      sample: Wordpress
+    server_technology_references:
+      description:
+        - List of dictionaries containing API self links of the associated technology resources.
+      returned: changed
+      type: complex
+      contains:
+        link:
+          description:
+            - A self link to an associated server technology.
+      type: string
+      sample: https://localhost/mgmt/tm/asm/server-technologies/NQG7CT02OBC2cQWbnP7T-A?ver=13.1.0
+  sample: hash/dictionary of values
+asm_signature_sets:
+  description: Detailed facts for ASM signature sets present on device.
+  returned: When C(asm-signature-sets) is specified in C(gather_subset).
+  type: complex
+  contains:
+    name:
+      description:
+        - Name of the signature set
+      returned: changed
+      type: string
+      sample: WebSphere signatures
+    id:
+      description:
+        - Displays the generated ID for the signature set resource.
+      returned: changed
+      type: string
+      sample: l0Ckxe-7yHsXp8U5tTgbFQ
+    type:
+      description:
+        - The method used to select signatures to be a part of the signature set.
+      returned: changed
+      type: string
+      sample: filter-based
+    category:
+      description:
+        - Displays the category of the signature set.
+      returned: changed
+      type: string
+      sample: filter-based
+    is_user_defined:
+      description:
+        - Specifies that this signature set was added by a user.
+      returned: changed
+      type: bool
+      sample: no
+    assign_to_policy_by_default:
+      description:
+        - Indicates whether the system assigns this signature set to a new created security policy by default.
+      returned: changed
+      type: bool
+      sample: yes
+    default_alarm:
+      description:
+        - Displays whether the security policy logs the request data in the Statistics
+          screen if a request matches a signature that is included in the signature set
+      returned: changed
+      type: bool
+      sample: yes
+    default_block:
+      description:
+        - Displays, when the security policy’s enforcement mode is Blocking,
+          how the system treats requests that match a signature included in the signature set.
+      returned: changed
+      type: bool
+      sample: yes
+    default_learn:
+      description:
+        - Displays whether the security policy learns all requests that match a signature
+          that is included in the signature set.
+      returned: changed
+      type: bool
+      sample: yes
   sample: hash/dictionary of values
 client_ssl_profiles:
   description: Client SSL Profile related facts.
@@ -6915,7 +7012,7 @@ class AsmPolicyFactManager(BaseManager):
 
     def exec_module(self):
         facts = self._exec_module()
-        result = dict(asm_policy_facts=facts)
+        result = dict(asm_policies=facts)
         return result
 
     def _exec_module(self):
@@ -7012,6 +7109,191 @@ class AsmPolicyFactManagerV13(AsmPolicyFactManager):
         to_expand = 'general,signature-settings,header-settings,cookie-settings,antivirus,' \
                     'policy-builder,csrf-protection,csrf-urls'
         query = '?$top=10&$skip={0}&$expand={1}'.format(skip, to_expand)
+        resp = self.client.api.get(uri + query)
+
+        try:
+            response = resp.json()
+        except ValueError as ex:
+            raise F5ModuleError(str(ex))
+
+        if 'code' in response and response['code'] == 400:
+            if 'message' in response:
+                raise F5ModuleError(response['message'])
+            else:
+                raise F5ModuleError(resp.content)
+
+        if 'items' not in response:
+            return None
+
+        return response['items']
+
+
+class AsmServerTechnologyFactParameters(BaseParameters):
+    api_map = {
+        'serverTechnologyName': 'server_technology_name',
+        'serverTechnologyReferences': 'server_technology_references',
+    }
+
+    returnables = [
+        'id',
+        'server_technology_name',
+        'server_technology_references',
+    ]
+
+
+class AsmServerTechnologyFactManager(BaseManager):
+    def __init__(self, *args, **kwargs):
+        self.client = kwargs.get('client', None)
+        self.module = kwargs.get('module', None)
+        super(AsmServerTechnologyFactManager, self).__init__(**kwargs)
+        self.want = AsmServerTechnologyFactParameters(params=self.module.params)
+
+    def exec_module(self):
+        facts = self._exec_module()
+        result = dict(asm_server_technologies=facts)
+        return result
+
+    def _exec_module(self):
+        results = []
+        if 'asm' not in self.provisioned_modules:
+            return results
+        if self.version_is_less_than_13():
+            return results
+        facts = self.read_facts()
+        for item in facts:
+            attrs = item.to_return()
+            results.append(attrs)
+        results = sorted(results, key=lambda k: k['server_technology_name'])
+        return results
+
+    def version_is_less_than_13(self):
+        version = tmos_version(self.client)
+        if LooseVersion(version) < LooseVersion('13.0.0'):
+            return True
+        else:
+            return False
+
+    def read_facts(self):
+        results = []
+        collection = self.read_collection_from_device()
+        for resource in collection:
+            params = AsmServerTechnologyFactParameters(params=resource)
+            results.append(params)
+        return results
+
+    def read_collection_from_device(self):
+        uri = "https://{0}:{1}/mgmt/tm/asm/server-technologies".format(
+            self.client.provider['server'],
+            self.client.provider['server_port'],
+        )
+        resp = self.client.api.get(uri)
+        try:
+            response = resp.json()
+        except ValueError as ex:
+            raise F5ModuleError(str(ex))
+        if 'code' in response and response['code'] == 400:
+            if 'message' in response:
+                raise F5ModuleError(response['message'])
+            else:
+                raise F5ModuleError(resp.content)
+        if 'items' not in response:
+            return []
+        result = response['items']
+        return result
+
+
+class AsmSignatureSetsFactParameters(BaseParameters):
+    api_map = {
+        'isUserDefined': 'is_user_defined',
+        'assignToPolicyByDefault': 'assign_to_policy_by_default',
+        'defaultAlarm': 'default_alarm',
+        'defaultBlock': 'default_block',
+        'defaultLearn': 'default_learn',
+    }
+
+    returnables = [
+        'name',
+        'id',
+        'type',
+        'category',
+        'is_user_defined',
+        'assign_to_policy_by_default',
+        'default_alarm',
+        'default_block',
+        'default_learn',
+    ]
+
+    @property
+    def is_user_defined(self):
+        return flatten_boolean(self._values['is_user_defined'])
+
+    @property
+    def assign_to_policy_by_default(self):
+        return flatten_boolean(self._values['assign_to_policy_by_default'])
+
+    @property
+    def default_alarm(self):
+        return flatten_boolean(self._values['default_alarm'])
+
+    @property
+    def default_block(self):
+        return flatten_boolean(self._values['default_block'])
+
+    @property
+    def default_learn(self):
+        return flatten_boolean(self._values['default_learn'])
+
+# TODO: add the following: filter, systems, signatureReferences
+
+
+class AsmSignatureSetsFactManager(BaseManager):
+    def __init__(self, *args, **kwargs):
+        self.client = kwargs.get('client', None)
+        self.module = kwargs.get('module', None)
+        super(AsmSignatureSetsFactManager, self).__init__(**kwargs)
+        self.want = AsmSignatureSetsFactParameters(params=self.module.params)
+
+    def exec_module(self):
+        facts = self._exec_module()
+        result = dict(asm_signature_sets=facts)
+        return result
+
+    def _exec_module(self):
+        results = []
+        if 'asm' not in self.provisioned_modules:
+            return results
+        facts = self.read_facts()
+        for item in facts:
+            attrs = item.to_return()
+            results.append(attrs)
+        results = sorted(results, key=lambda k: k['name'])
+        return results
+
+    def read_facts(self):
+        results = []
+        collection = self.increment_read()
+        for resource in collection:
+            params = AsmSignatureSetsFactParameters(params=resource)
+            results.append(params)
+        return results
+
+    def increment_read(self):
+        n = 0
+        result = []
+        while True:
+            items = self.read_collection_from_device(skip=n)
+            if not items:
+                break
+            result.extend(items)
+            n = n + 5
+        return result
+
+    def read_collection_from_device(self, skip=0):
+        uri = "https://{0}:{1}/mgmt/tm/asm/signature-sets".format(
+            self.client.provider['server'],
+            self.client.provider['server_port'],
+        )
+        query = '?$top=5&$skip={0}'.format(skip)
         resp = self.client.api.get(uri + query)
 
         try:
@@ -14833,6 +15115,8 @@ class ModuleManager(object):
         self.managers = {
             'asm-policy-stats': AsmPolicyStatsFactManager,
             'asm-policies': AsmPolicyFactManager,
+            'asm-server-technologies': AsmServerTechnologyFactManager,
+            'asm-signature-sets': AsmSignatureSetsFactManager,
             'client-ssl-profiles': ClientSslProfilesFactManager,
             'devices': DevicesFactManager,
             'device-groups': DeviceGroupsFactManager,
@@ -15030,6 +15314,8 @@ class ArgumentSpec(object):
                     # Non-meta choices
                     'asm-policies',
                     'asm-policy-stats',
+                    'asm-server-technologies',
+                    'asm-signature-sets',
                     'client-ssl-profiles',
                     'devices',
                     'device-groups',
@@ -15094,6 +15380,8 @@ class ArgumentSpec(object):
                     # Negations of non-meta-choices
                     '!asm-policy-stats',
                     '!asm-policies',
+                    '!asm-server-technologies',
+                    '!asm-signature-sets',
                     '!client-ssl-profiles',
                     '!devices',
                     '!device-groups',
