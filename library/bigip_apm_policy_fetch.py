@@ -14,46 +14,30 @@ ANSIBLE_METADATA = {'metadata_version': '1.1',
 
 DOCUMENTATION = r'''
 ---
-module: bigip_asm_policy_fetch
-short_description: Exports the asm policy from remote nodes.
+module: bigip_apm_policy_fetch
+short_description: Exports the APM policy or APM access profile from remote nodes.
 description:
-  - Exports the asm policy from remote nodes.
+  - Exports the apm policy or APM access profile from remote nodes.
 version_added: 2.8
 options:
   name:
     description:
-      - The name of the policy exported to create a file on the remote device for downloading.
+      - The name of the APM policy or APM access profile exported to create a file on the remote device for downloading.
     required: True
   dest:
     description:
-      - A directory to save the policy file into.
-      - Di
-      - This option is ignored when C(inline) is set to c(yes).
+      - A directory to save the file into.
     type: path
   file:
     description:
-      - The name of the file to be create on the remote device for downloading.
-      - When C(binary) is set to C(no) the ASM policy will be in XML format.
-  inline:
+      - The name of the file to be created on the remote device for downloading.
+  type:
     description:
-      - If C(yes), the ASM policy will be exported C(inline) as a string instead of a file.
-      - The policy can be be retrieved in playbook C(result) dictionary under C(inline_policy) key.
-    type: bool
-  compact:
-    description:
-      - If C(yes), only the ASM policy custom settings will be exported.
-      - Only applies to XML type ASM policy exports.
-    type: bool
-  base64:
-    description:
-      - If C(yes), the returned C(inline) ASM policy content will be Base64 encoded.
-      - Only applies to C(inline) ASM policy exports.
-    type: bool
-  binary:
-    description:
-      - If C(yes), the exported ASM policy will be in binary format.
-      - Only applies to C(file) ASM policy exports.
-    type: bool
+      - Specifies the type of item to export from device.
+    choices:
+      - profile_access
+      - access_policy
+    default: profile_access
   force:
     description:
       - If C(no), the file will only be transferred if it does not exist in the the destination.
@@ -61,39 +45,20 @@ options:
     type: bool
   partition:
     description:
-      - Device partition to which contain ASM policy to export.
+      - Device partition to which contain APM policy or APM access profile to export.
     default: Common
+notes:
+  - Due to ID685681 it is not possible to execute ng_* tools via REST api on v12.x and 13.x, once this is fixed
+    this restriction will be removed.
+  - Requires BIG-IP >= 14.0.0
 extends_documentation_fragment: f5
 author:
   - Wojciech Wypior (@wojtek0806)
 '''
 
 EXAMPLES = r'''
-- name: Export policy in binary format
-  bigip_asm_policy_fetch:
-    name: foobar
-    file: export_foo
-    dest: /root/download
-    binary: yes
-    provider:
-      password: secret
-      server: lb.mydomain.com
-      user: admin
-  delegate_to: localhost
-
-- name: Export policy inline base64 encoded format
-  bigip_asm_policy_fetch:
-    name: foobar
-    inline: yes
-    base64: yes
-    provider:
-      password: secret
-      server: lb.mydomain.com
-      user: admin
-  delegate_to: localhost
-
-- name: Export policy in XML format
-  bigip_asm_policy_fetch:
+- name: Export APM access profile
+  bigip_apm_policy_fetch:
     name: foobar
     file: export_foo
     dest: /root/download
@@ -103,23 +68,22 @@ EXAMPLES = r'''
       user: admin
   delegate_to: localhost
 
-- name: Export compact policy in XML format
-  bigip_asm_policy_fetch:
+- name: Export APM access policy
+  bigip_apm_policy_fetch:
     name: foobar
-    file: export_foo.xml
-    dest: /root/download/
-    compact: yes
+    file: export_foo
+    dest: /root/download
+    type: access_policy
     provider:
       password: secret
       server: lb.mydomain.com
       user: admin
   delegate_to: localhost
 
-- name: Export policy in binary format, autogenerate name
-  bigip_asm_policy_fetch:
+- name: Export APM access profile, autogenerate name
+  bigip_apm_policy_fetch:
     name: foobar
-    dest: /root/download/
-    binary: yes
+    dest: /root/download
     provider:
       password: secret
       server: lb.mydomain.com
@@ -129,107 +93,76 @@ EXAMPLES = r'''
 
 RETURN = r'''
 name:
-  description: Name of the ASM policy to be exported.
+  description: Name of the APM policy or APM access profile to be exported.
   returned: changed
   type: str
-  sample: Asm_APP1_Transparent
-dest:
-  description: Local path to download exported ASM policy.
-  returned: changed
-  type: str
-  sample: /root/downloads/foobar.xml
+  sample: APM_policy_global
 file:
   description:
-    - Name of the policy file on the remote BIG-IP to download. If not
+    - Name of the exported file on the remote BIG-IP to download. If not
       specified, then this will be a randomly generated filename.
   returned: changed
   type: str
-  sample: foobar.xml
-inline:
-  description: Set when ASM policy to be exported inline
+  sample: foobar_file
+dest:
+  description: Local path to download exported APM policy.
   returned: changed
-  type: bool
-  sample: yes
-compact:
-  description: Set only to export custom ASM policy settings.
+  type: str
+  sample: /root/downloads/profile-foobar_file.conf.tar.gz
+type:
+  description: Set to specify type of item to export.
   returned: changed
-  type: bool
-  sample: no
-base64:
-  description: Set to encode inline export in base64 format.
-  returned: changed
-  type: bool
-  sample: no
-binary:
-  description: Set to export ASM policy in binary format.
-  returned: changed
-  type: bool
-  sample: yes
+  type: str
+  sample: access_policy
 '''
 
 import os
-import time
 import tempfile
 
 from ansible.module_utils.basic import AnsibleModule
 from ansible.module_utils.basic import env_fallback
+from distutils.version import LooseVersion
 
 try:
     from library.module_utils.network.f5.bigip import F5RestClient
     from library.module_utils.network.f5.common import F5ModuleError
     from library.module_utils.network.f5.common import AnsibleF5Parameters
     from library.module_utils.network.f5.common import cleanup_tokens
-    from library.module_utils.network.f5.common import fq_name
     from library.module_utils.network.f5.common import f5_argument_spec
     from library.module_utils.network.f5.common import exit_json
     from library.module_utils.network.f5.common import fail_json
-    from library.module_utils.network.f5.common import flatten_boolean
+    from library.module_utils.network.f5.common import transform_name
     from library.module_utils.network.f5.icontrol import download_file
+    from library.module_utils.network.f5.icontrol import tmos_version
     from library.module_utils.network.f5.icontrol import module_provisioned
 except ImportError:
     from ansible.module_utils.network.f5.bigip import F5RestClient
     from ansible.module_utils.network.f5.common import F5ModuleError
     from ansible.module_utils.network.f5.common import AnsibleF5Parameters
     from ansible.module_utils.network.f5.common import cleanup_tokens
-    from ansible.module_utils.network.f5.common import fq_name
     from ansible.module_utils.network.f5.common import f5_argument_spec
     from ansible.module_utils.network.f5.common import exit_json
     from ansible.module_utils.network.f5.common import fail_json
-    from ansible.module_utils.network.f5.common import flatten_boolean
+    from ansible.module_utils.network.f5.common import transform_name
     from ansible.module_utils.network.f5.icontrol import download_file
+    from ansible.module_utils.network.f5.icontrol import tmos_version
     from ansible.module_utils.network.f5.icontrol import module_provisioned
 
 
 class Parameters(AnsibleF5Parameters):
-    api_map = {
-        'filename': 'file',
-        'minimal': 'compact',
-        'isBase64': 'base64',
-    }
+    api_map = {}
 
-    api_attributes = [
-        'inline',
-        'minimal',
-        'isBase64',
-        'policyReference',
-        'filename',
-    ]
+    api_attributes = []
 
     returnables = [
-        'file',
-        'compact',
-        'base64',
-        'inline',
-        'force',
-        'binary',
-        'dest',
         'name',
-        'inline_policy',
+        'file',
+        'dest',
+        'type',
+        'force',
     ]
 
-    updatables = [
-
-    ]
+    updatables = []
 
 
 class ApiParameters(Parameters):
@@ -237,15 +170,20 @@ class ApiParameters(Parameters):
 
 
 class ModuleParameters(Parameters):
-    def _policy_exists(self):
-        uri = 'https://{0}:{1}/mgmt/tm/asm/policies/'.format(
-            self.client.provider['server'],
-            self.client.provider['server_port'],
-        )
-        query = "?$filter=contains(name,'{0}')+and+contains(partition,'{1}')&$select=name,partition".format(
-            self.want.name, self.want.partition
-        )
-        resp = self.client.api.get(uri + query)
+    def _item_exists(self):
+        if self.type == 'access_policy':
+            uri = 'https://{0}:{1}/mgmt/tm/apm/policy/access-policy/{2}'.format(
+                self.client.provider['server'],
+                self.client.provider['server_port'],
+                transform_name(self.partition, self.name)
+            )
+        else:
+            uri = 'https://{0}:{1}/mgmt/tm/apm/profile/access/{2}'.format(
+                self.client.provider['server'],
+                self.client.provider['server_port'],
+                transform_name(self.partition, self.name)
+            )
+        resp = self.client.api.get(uri)
         try:
             response = resp.json()
         except ValueError as ex:
@@ -255,24 +193,10 @@ class ModuleParameters(Parameters):
         return False
 
     @property
-    def name(self):
-        if self._policy_exists():
-            return self._values['name']
-        else:
-            raise F5ModuleError(
-                "The specified ASM policy {0} on partition {1} does not exist on device.".format(
-                    self._values['name'], self._values['partition']
-                )
-            )
-
-    @property
     def file(self):
         if self._values['file'] is not None:
             return self._values['file']
-        if self.binary:
-            result = next(tempfile._get_candidate_names()) + '.plc'
-        else:
-            result = next(tempfile._get_candidate_names()) + '.xml'
+        result = next(tempfile._get_candidate_names()) + '.tar.gz'
         self._values['file'] = result
         return result
 
@@ -307,28 +231,12 @@ class ModuleParameters(Parameters):
         return result
 
     @property
-    def inline(self):
-        result = flatten_boolean(self._values['inline'])
-        if result == 'yes':
-            return True
-        elif result == 'no':
-            return False
-
-    @property
-    def compact(self):
-        result = flatten_boolean(self._values['compact'])
-        if result == 'yes':
-            return True
-        elif result == 'no':
-            return False
-
-    @property
-    def base64(self):
-        result = flatten_boolean(self._values['base64'])
-        if result == 'yes':
-            return True
-        elif result == 'no':
-            return False
+    def name(self):
+        if not self._item_exists():
+            raise F5ModuleError('The provided {0} with the name {1} does not exist on device.'.format(
+                self.type, self._values['name'])
+            )
+        return self._values['name']
 
 
 class Changes(Parameters):
@@ -375,10 +283,14 @@ class ModuleManager(object):
             )
 
     def exec_module(self):
-        if not module_provisioned(self.client, 'asm'):
+        if not module_provisioned(self.client, 'apm'):
             raise F5ModuleError(
-                "ASM must be provisioned to use this module."
+                "APM must be provisioned to use this module."
             )
+
+        if self.version_less_than_14():
+            raise F5ModuleError('Due to bug ID685681 it is not possible to use this module on TMOS version below 14.x')
+
         result = dict()
 
         self.export()
@@ -388,6 +300,12 @@ class ModuleManager(object):
         result.update(**changes)
         result.update(dict(changed=True))
         return result
+
+    def version_less_than_14(self):
+        version = tmos_version(self.client)
+        if LooseVersion(version) < LooseVersion('14.0.0'):
+            return True
+        return False
 
     def export(self):
         if self.exists():
@@ -406,16 +324,7 @@ class ModuleManager(object):
         self._set_changed_options()
         if self.module.check_mode:
             return True
-        if self.want.binary:
-            self.export_binary()
-            return True
         self.create_on_device()
-        if not self.want.inline:
-            self.execute()
-        return True
-
-    def export_binary(self):
-        self.export_binary_on_device()
         self.execute()
         return True
 
@@ -429,103 +338,18 @@ class ModuleManager(object):
 
     def execute(self):
         self.download()
-        self.remove_temp_policy_from_device()
+        self.remove_temp_file_from_device()
         return True
 
     def exists(self):
-        if not self.want.inline:
-            if os.path.exists(self.want.fulldest):
-                return True
+        if os.path.exists(self.want.fulldest):
+            return True
         return False
 
     def create_on_device(self):
-        self._set_policy_link()
-        params = self.changes.api_params()
-        uri = "https://{0}:{1}/mgmt/tm/asm/tasks/export-policy/".format(
-            self.client.provider['server'],
-            self.client.provider['server_port'],
+        cmd = 'ng_export -t {0} {1} {2} -p {3}'.format(
+            self.want.type, self.want.name, self.want.name, self.want.partition
         )
-        resp = self.client.api.post(uri, json=params)
-
-        try:
-            response = resp.json()
-        except ValueError as ex:
-            raise F5ModuleError(str(ex))
-
-        if 'code' in response and response['code'] in [400, 403]:
-            if 'message' in response:
-                raise F5ModuleError(response['message'])
-            else:
-                raise F5ModuleError(resp.content)
-
-        result, output = self.wait_for_task(response['id'])
-        if result and output:
-            if 'file' in output:
-                self.changes.update(dict(inline_policy=output['file']))
-        if result:
-            return True
-
-    def wait_for_task(self, task_id):
-        uri = "https://{0}:{1}/mgmt/tm/asm/tasks/export-policy/{2}".format(
-            self.client.provider['server'],
-            self.client.provider['server_port'],
-            task_id
-        )
-        while True:
-            resp = self.client.api.get(uri)
-
-            try:
-                response = resp.json()
-            except ValueError as ex:
-                raise F5ModuleError(str(ex))
-
-            if 'code' in response and response['code'] == 400:
-                if 'message' in response:
-                    raise F5ModuleError(response['message'])
-                else:
-                    raise F5ModuleError(resp.content)
-
-            if response['status'] in ['COMPLETED', 'FAILURE']:
-                break
-            time.sleep(1)
-
-        if response['status'] == 'FAILURE':
-            raise F5ModuleError(
-                'Failed to export ASM policy.'
-            )
-        if response['status'] == 'COMPLETED':
-            if not self.want.inline:
-                return True, None
-            else:
-                return True, response['result']
-
-    def _set_policy_link(self):
-        policy_link = None
-        uri = 'https://{0}:{1}/mgmt/tm/asm/policies/'.format(
-            self.client.provider['server'],
-            self.client.provider['server_port'],
-        )
-        query = "?$filter=contains(name,'{0}')+and+contains(partition,'{1}')&$select=name,partition".format(
-            self.want.name, self.want.partition
-        )
-        resp = self.client.api.get(uri + query)
-        try:
-            response = resp.json()
-        except ValueError as ex:
-            raise F5ModuleError(str(ex))
-
-        if 'items' in response and response['items'] != []:
-            policy_link = response['items'][0]['selfLink']
-
-        if not policy_link:
-            raise F5ModuleError("The policy was not found")
-
-        self.changes.update(dict(policyReference={'link': policy_link}))
-        return True
-
-    def export_binary_on_device(self):
-        full_name = fq_name(self.want.partition, self.want.name)
-        cmd = 'tmsh save asm policy {0} bin-file {1}'.format(full_name, self.want.file)
         uri = "https://{0}:{1}/mgmt/tm/util/bash/".format(
             self.client.provider['server'],
             self.client.provider['server_port'],
@@ -538,28 +362,29 @@ class ModuleManager(object):
 
         try:
             response = resp.json()
-            if 'commandResult' in response:
-                if 'Unexpected Error' in response['commandResult']:
-                    raise F5ModuleError(response['commandResult'])
         except ValueError as ex:
             raise F5ModuleError(str(ex))
 
-        if 'code' in response and response['code'] == 400:
+        if 'code' in response and response['code'] in [400, 403]:
             if 'message' in response:
                 raise F5ModuleError(response['message'])
             else:
                 raise F5ModuleError(resp.content)
-
-        self._move_binary_to_download()
-
+        if 'commandResult' in response:
+            raise F5ModuleError('Item export command failed.')
         return True
 
-    def _move_binary_to_download(self):
-        name = '{0}~{1}'.format(self.client.provider['user'], self.want.file)
-        move_path = '/var/tmp/{0} {1}/{2}'.format(
-            self.want.file,
+    def _move_file_to_download(self):
+        if self.want.type == 'access_policy':
+            item = 'policy'
+        else:
+            item = 'profile'
+
+        name = '{0}-{1}.conf.tar.gz'.format(item, self.want.name)
+        move_path = '/shared/tmp/{0} {1}/{2}'.format(
+            name,
             '/ts/var/rest',
-            name
+            self.want.file
         )
         params = dict(
             command='run',
@@ -605,9 +430,8 @@ class ModuleManager(object):
             return True
         return False
 
-    def remove_temp_policy_from_device(self):
-        name = '{0}~{1}'.format(self.client.provider['user'], self.want.file)
-        tpath_name = '/ts/var/rest/{0}'.format(name)
+    def remove_temp_file_from_device(self):
+        tpath_name = '/ts/var/rest/{0}'.format(self.want.file)
         uri = "https://{0}:{1}/mgmt/tm/util/unix-rm/".format(
             self.client.provider['server'],
             self.client.provider['server_port'],
@@ -638,19 +462,11 @@ class ArgumentSpec(object):
             dest=dict(
                 type='path'
             ),
+            type=dict(
+                default='profile_access',
+                choices=['profile_access', 'access_policy']
+            ),
             file=dict(),
-            inline=dict(
-                type='bool'
-            ),
-            compact=dict(
-                type='bool'
-            ),
-            base64=dict(
-                type='bool'
-            ),
-            binary=dict(
-                type='bool'
-            ),
             force=dict(
                 default='yes',
                 type='bool'
@@ -663,12 +479,6 @@ class ArgumentSpec(object):
         self.argument_spec = {}
         self.argument_spec.update(f5_argument_spec)
         self.argument_spec.update(argument_spec)
-        self.mutually_exclusive = [
-            ['binary', 'inline'],
-            ['binary', 'compact'],
-            ['dest', 'inline'],
-            ['file', 'inline']
-        ]
 
 
 def main():
@@ -677,7 +487,6 @@ def main():
     module = AnsibleModule(
         argument_spec=spec.argument_spec,
         supports_check_mode=spec.supports_check_mode,
-        mutually_exclusive=spec.mutually_exclusive,
     )
 
     client = F5RestClient(**module.params)
