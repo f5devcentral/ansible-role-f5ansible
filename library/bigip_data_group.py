@@ -131,10 +131,13 @@ options:
     description:
       - When C(state) is C(present), ensures the data group exists.
       - When C(state) is C(absent), ensures that the data group is removed.
+      - The use of state in this module refers to the entire data group, not its members.
     choices:
       - present
       - absent
     default: present
+notes:
+  - This module does NOT support atomic updates of data group members in a type C(internal) data group.
 extends_documentation_fragment: f5
 author:
   - Tim Rupp (@caphrim007)
@@ -268,10 +271,7 @@ try:
     from library.module_utils.network.f5.bigip import F5RestClient
     from library.module_utils.network.f5.common import F5ModuleError
     from library.module_utils.network.f5.common import AnsibleF5Parameters
-    from library.module_utils.network.f5.common import cleanup_tokens
     from library.module_utils.network.f5.common import transform_name
-    from library.module_utils.network.f5.common import exit_json
-    from library.module_utils.network.f5.common import fail_json
     from library.module_utils.network.f5.common import compare_complex_list
     from library.module_utils.network.f5.common import f5_argument_spec
     from library.module_utils.network.f5.ipaddress import is_valid_ip_interface
@@ -283,10 +283,7 @@ except ImportError:
     from ansible.module_utils.network.f5.bigip import F5RestClient
     from ansible.module_utils.network.f5.common import F5ModuleError
     from ansible.module_utils.network.f5.common import AnsibleF5Parameters
-    from ansible.module_utils.network.f5.common import cleanup_tokens
     from ansible.module_utils.network.f5.common import transform_name
-    from ansible.module_utils.network.f5.common import exit_json
-    from ansible.module_utils.network.f5.common import fail_json
     from ansible.module_utils.network.f5.common import compare_complex_list
     from ansible.module_utils.network.f5.common import f5_argument_spec
     from ansible.module_utils.network.f5.ipaddress import is_valid_ip_interface
@@ -580,6 +577,17 @@ class Parameters(AnsibleF5Parameters):
 
 
 class ApiParameters(Parameters):
+
+    def _strip_route_domain(self, item):
+        result = dict()
+        pattern = r'(?P<ip>[^%]+)%(?P<route_domain>[0-9]+)/(?P<mask>[0-9]+)'
+        matches = re.search(pattern, item['name'])
+        if matches:
+            result['data'] = item['data']
+            result['name'] = '{0}/{1}'.format(matches.group('ip'), matches.group('mask'))
+            return result
+        return item
+
     @property
     def checksum(self):
         if self._values['checksum'] is None:
@@ -591,7 +599,8 @@ class ApiParameters(Parameters):
     def records(self):
         if self._values['records'] is None:
             return None
-        return self._values['records']
+        result = [self._strip_route_domain(item) for item in self._values['records']]
+        return result
 
     @property
     def records_list(self):
@@ -740,7 +749,7 @@ class Difference(object):
 class BaseManager(object):
     def __init__(self, *args, **kwargs):
         self.module = kwargs.get('module', None)
-        self.client = kwargs.get('client', None)
+        self.client = F5RestClient(**self.module.params)
         self.want = ModuleParameters(params=self.module.params)
         self.have = ApiParameters()
         self.changes = UsableChanges()
@@ -1226,7 +1235,6 @@ class ModuleManager(object):
     def __init__(self, *args, **kwargs):
         self.kwargs = kwargs
         self.module = kwargs.get('module')
-        self.client = kwargs.get('client', None)
 
     def exec_module(self):
         if self.module.params['internal']:
@@ -1287,16 +1295,12 @@ def main():
         mutually_exclusive=spec.mutually_exclusive
     )
 
-    client = F5RestClient(**module.params)
-
     try:
-        mm = ModuleManager(module=module, client=client)
+        mm = ModuleManager(module=module)
         results = mm.exec_module()
-        cleanup_tokens(client)
-        exit_json(module, results, client)
+        module.exit_json(**results)
     except F5ModuleError as ex:
-        cleanup_tokens(client)
-        fail_json(module, ex, client)
+        module.fail_json(msg=str(ex))
 
 
 if __name__ == '__main__':
