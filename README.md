@@ -9,15 +9,8 @@ available.
 ## Requirements
 
  - python >= 2.7
- - f5-sdk
 
 This role requires Ansible 2.7 or higher. Requirements are listed in the metadata file.
-
-Please install f5-sdk from pip prior to running this module.
-
-```
-pip install f5-sdk --upgrade
-```
 
 ## Installation
 
