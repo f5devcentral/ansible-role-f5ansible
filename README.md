@@ -10,7 +10,8 @@ available.
 
  - python >= 2.7
 
-This role requires Ansible 2.7 or higher. Requirements are listed in the metadata file.
+Due to significant changes in some of the plugins, to ensure all of the elements function correctly the Ansible 
+requirement has been changed to 2.8 or higher. Requirements are listed in the metadata file.
 
 ## Installation
 
