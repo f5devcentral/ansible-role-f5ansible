@@ -14,53 +14,55 @@ ANSIBLE_METADATA = {'metadata_version': '1.1',
 
 DOCUMENTATION = r'''
 ---
-module: bigip_message_routing_route
-short_description: Manages static routes for routing message protocol messages
+module: bigip_message_routing_protocol
+short_description: Manage generic message parser profile.
 description:
-  - Manages static routes for routing message protocol messages.
+  - Manages generic message parser profile for use with the message routing framework.
 version_added: 2.9
 options:
   name:
     description:
-      - Specifies the name of the static route.
+      - Specifies the name of the generic parser profile.
     required: True
     type: str
   description:
     description:
-      - The user defined description of the static route.
+      - The user defined description of the generic parser profile.
     type: str
-  type:
+  parent:
     description:
-      - Parameter used to specify the type of the route to manage.
-      - Default setting is C(generic) with more options added in future.
+      - The parent template of this parser profile. Once this value has been set, it cannot be changed.
+      - When creating a new profile, if this parameter is not specified,
+        the default is the system-supplied C(genericmsg) profile.
     type: str
-    choices:
-      - generic
-    default: generic
-  src_address:
+  disable_parser:
     description:
-      - Specifies the source address of the route.
-      - Setting the attribute to an empty string will create a wildcard matching all message source-addresses, which is
-        the default when creating a new route.
+      - When C(yes), the generic message parser will be disabled ignoring all incoming packets and not directly
+        send message data.
+      - This mode supports iRule script protocol implementations that will generate messages from the incoming transport
+        stream and send outgoing messages on the outgoing transport stream.
+    type: bool
+  max_egress_buffer:
+    description:
+      - Specifies the maximum size of the send buffer in bytes. If the number of bytes in the send buffer for a
+        connection exceeds this value, the generic message protocol will stop receiving outgoing messages from the
+        router until the size of the size of the buffer drops below this setting.
+      - The accepted range is between 0 and 4294967295 inclusive.
+    type: int
+  max_msg_size:
+    description:
+      - Specifies the maximum size of a received message. If a message exceeds this size, the connection will be reset.
+      - The accepted range is between 0 and 4294967295 inclusive.
+    type: int
+  msg_terminator:
+    description:
+      - The string of characters used to terminate a message. If the message-terminator is not specified,
+        the generic message parser will not separate the input stream into messages.
     type: str
-  dst_address:
+  no_response:
     description:
-      - Specifies the destination address of the route.
-      - Setting the attribute to an empty string will create a wildcard matching all message destination-addresses,
-        which is the default when creating a new route.
-    type: str
-  peer_selection_mode:
-    description:
-      - Specifies the method to use when selecting a peer from the provided list of C(peers).
-    type: str
-    choices:
-      - ratio
-      - sequential
-  peers:
-    description:
-      - Specifies a list of ltm messagerouting-peer objects.
-      - The specified peer must be on the same partition as the route.
-    type: list
+      - When set, matching of responses to requests is disabled.
+    type: bool
   partition:
     description:
       - Device partition to create route object on.
@@ -83,33 +85,32 @@ author:
 '''
 
 EXAMPLES = r'''
-- name: Create a simple generic route
-  bigip_message_routing_route:
-    name: foobar
+- name: Create a generic parser
+  bigip_message_routing_protocol:
+    name: foo
+    description: 'This is parser'
+    no_response: yes
     provider:
       password: secret
       server: lb.mydomain.com
       user: admin
   delegate_to: localhost
 
-- name: Modify a generic route
-  bigip_message_routing_route:
-    name: foobar
-    peers:
-      - peer1
-      - peer2
-    peer_selection_mode: ratio
-    src_address: annoying_user
-    dst_address: blackhole
+- name: Modify a generic parser
+  bigip_message_routing_protocol:
+    name: foo
+    no_response: no
+    max_egress_buffer: 10000
+    max_msg_size: 2000
     provider:
       password: secret
       server: lb.mydomain.com
       user: admin
   delegate_to: localhost
 
-- name: Remove a generic
-  bigip_message_routing_route:
-    name: foobar
+- name: Remove generic parser
+  bigip_message_routing_protocol:
+    name: foo
     state: absent
     provider:
       password: secret
@@ -120,30 +121,40 @@ EXAMPLES = r'''
 
 RETURN = r'''
 description:
-  description: The user defined description of the route.
+  description: The user defined description of the parser profile.
+  returned: changed
+  type: str
+  sample: My description
+parent:
+  description: The parent template of this parser profile.
   returned: changed
   type: string
-  sample: Some description
-src_address:
-  description: The source address of the route.
+  sample: /Common/genericmsg
+disable_parser:
+  description: Disables generic message parser.
   returned: changed
-  type: str
-  sample: annyoing_user
-dst_address:
-  description: The destination address of the route.
+  type: bool
+  sample: yes
+max_egress_buffer:
+  description: The maximum size of the send buffer in bytes.
   returned: changed
-  type: str
-  sample: blackhole
-peer_selection_mode:
-  description: The method to use when selecting a peer.
+  type: int
+  sample: 10000
+max_msg_size:
+  description: The maximum size of a received message.
   returned: changed
-  type: str
-  sample: ratio
-peers:
-  description: The list of ltm messagerouting-peer object.
+  type: int
+  sample: 4000
+msg_terminator:
+  description: The string of characters used to terminate a message.
   returned: changed
-  type: list
-  sample: ['/Common/peer1', '/Common/peer2']
+  type: string
+  sample: '%%%%'
+no_response:
+  description: Disables matching of responses to requests.
+  returned: changed
+  type: bool
+  sample: yes
 '''
 
 from ansible.module_utils.basic import AnsibleModule
@@ -155,56 +166,71 @@ try:
     from library.module_utils.network.f5.common import F5ModuleError
     from library.module_utils.network.f5.common import AnsibleF5Parameters
     from library.module_utils.network.f5.common import fq_name
-    from library.module_utils.network.f5.common import flatten_boolean
     from library.module_utils.network.f5.common import transform_name
     from library.module_utils.network.f5.common import f5_argument_spec
+    from library.module_utils.network.f5.common import flatten_boolean
     from library.module_utils.network.f5.compare import cmp_str_with_none
-    from library.module_utils.network.f5.compare import cmp_simple_list
     from library.module_utils.network.f5.icontrol import tmos_version
 except ImportError:
     from ansible.module_utils.network.f5.bigip import F5RestClient
     from ansible.module_utils.network.f5.common import F5ModuleError
     from ansible.module_utils.network.f5.common import AnsibleF5Parameters
     from ansible.module_utils.network.f5.common import fq_name
-    from ansible.module_utils.network.f5.common import flatten_boolean
     from ansible.module_utils.network.f5.common import transform_name
     from ansible.module_utils.network.f5.common import f5_argument_spec
+    from ansible.module_utils.network.f5.common import flatten_boolean
     from ansible.module_utils.network.f5.compare import cmp_str_with_none
-    from ansible.module_utils.network.f5.compare import cmp_simple_list
     from ansible.module_utils.network.f5.icontrol import tmos_version
 
 
 class Parameters(AnsibleF5Parameters):
     api_map = {
-        'peerSelectionMode': 'peer_selection_mode',
-        'sourceAddress': 'src_address',
-        'destinationAddress': 'dst_address',
+        'defaultsFrom': 'parent',
+        'disableParser': 'disable_parser',
+        'maxEgressBuffer': 'max_egress_buffer',
+        'maxMessageSize': 'max_msg_size',
+        'messageTerminator': 'msg_terminator',
+        'noResponse': 'no_response',
 
     }
 
     api_attributes = [
         'description',
-        'peerSelectionMode',
-        'peers',
-        'sourceAddress',
-        'destinationAddress',
+        'defaultsFrom',
+        'disableParser',
+        'maxEgressBuffer',
+        'maxMessageSize',
+        'messageTerminator',
+        'noResponse',
     ]
 
     returnables = [
-        'peer_selection_mode',
-        'peers',
         'description',
-        'src_address',
-        'dst_address'
+        'parent',
+        'disable_parser',
+        'max_egress_buffer',
+        'max_msg_size',
+        'msg_terminator',
+        'no_response',
     ]
 
     updatables = [
-        'peer_selection_mode',
-        'peers',
         'description',
-        'src_address',
-        'dst_address'
+        'parent',
+        'disable_parser',
+        'max_egress_buffer',
+        'max_msg_size',
+        'msg_terminator',
+        'no_response',
     ]
+
+    @property
+    def no_response(self):
+        return flatten_boolean(self._values['no_response'])
+
+    @property
+    def disable_parser(self):
+        return flatten_boolean(self._values['disable_parser'])
 
 
 class ApiParameters(Parameters):
@@ -213,13 +239,31 @@ class ApiParameters(Parameters):
 
 class ModuleParameters(Parameters):
     @property
-    def peers(self):
-        if self._values['peers'] is None:
+    def parent(self):
+        if self._values['parent'] is None:
             return None
-        if len(self._values['peers']) == 1 and self._values['peers'][0] == "":
-            return ""
-        result = [fq_name(self.partition, peer) for peer in self._values['peers']]
+        result = fq_name(self.partition, self._values['parent'])
         return result
+
+    @property
+    def max_msg_size(self):
+        if self._values['max_msg_size'] is None:
+            return None
+        if 0 <= self._values['max_msg_size'] <= 4294967295:
+            return self._values['max_msg_size']
+        raise F5ModuleError(
+            "Valid 'max_msg_size' must be in range 0 - 4294967295."
+        )
+
+    @property
+    def max_egress_buffer(self):
+        if self._values['max_egress_buffer'] is None:
+            return None
+        if 0 <= self._values['max_egress_buffer'] <= 4294967295:
+            return self._values['max_egress_buffer']
+        raise F5ModuleError(
+            "Valid 'max_egress_buffer' must be in range 0 - 4294967295."
+        )
 
 
 class Changes(Parameters):
@@ -264,27 +308,24 @@ class Difference(object):
             return attr1
 
     @property
+    def parent(self):
+        if self.want.parent is None:
+            return None
+        if self.want.parent != self.have.parent:
+            raise F5ModuleError(
+                "The parent router profile cannot be changed."
+            )
+
+    @property
     def description(self):
-        result = cmp_str_with_none(self.want.description, self.have.description)
-        return result
+        return cmp_str_with_none(self.want.description, self.have.description)
 
     @property
-    def dst_address(self):
-        result = cmp_str_with_none(self.want.dst_address, self.have.dst_address)
-        return result
-
-    @property
-    def src_address(self):
-        result = cmp_str_with_none(self.want.src_address, self.have.src_address)
-        return result
-
-    @property
-    def peers(self):
-        result = cmp_simple_list(self.want.peers, self.have.peers)
-        return result
+    def msg_terminator(self):
+        return cmp_str_with_none(self.want.msg_terminator, self.have.msg_terminator)
 
 
-class BaseManager(object):
+class ModuleManager(object):
     def __init__(self, *args, **kwargs):
         self.module = kwargs.get('module', None)
         self.client = F5RestClient(**self.module.params)
@@ -326,7 +367,15 @@ class BaseManager(object):
                 version=warning['version']
             )
 
+    def version_less_than_14(self):
+        version = tmos_version(self.client)
+        if LooseVersion(version) < LooseVersion('14.0.0'):
+            return True
+        return False
+
     def exec_module(self):
+        if self.version_less_than_14():
+            raise F5ModuleError('Message routing is not supported on TMOS version below 14.x')
         changed = False
         result = dict()
         state = self.want.state
@@ -384,10 +433,8 @@ class BaseManager(object):
         self.create_on_device()
         return True
 
-
-class GenericModuleManager(BaseManager):
     def exists(self):
-        uri = "https://{0}:{1}/mgmt/tm/ltm/message-routing/generic/route/{2}".format(
+        uri = "https://{0}:{1}/mgmt/tm/ltm/message-routing/generic/protocol/{2}".format(
             self.client.provider['server'],
             self.client.provider['server_port'],
             transform_name(self.want.partition, self.want.name)
@@ -405,7 +452,7 @@ class GenericModuleManager(BaseManager):
         params = self.changes.api_params()
         params['name'] = self.want.name
         params['partition'] = self.want.partition
-        uri = "https://{0}:{1}/mgmt/tm/ltm/message-routing/generic/route/".format(
+        uri = "https://{0}:{1}/mgmt/tm/ltm/message-routing/generic/protocol/".format(
             self.client.provider['server'],
             self.client.provider['server_port'],
         )
@@ -424,7 +471,7 @@ class GenericModuleManager(BaseManager):
 
     def update_on_device(self):
         params = self.changes.api_params()
-        uri = "https://{0}:{1}/mgmt/tm/ltm/message-routing/generic/route/{2}".format(
+        uri = "https://{0}:{1}/mgmt/tm/ltm/message-routing/generic/protocol/{2}".format(
             self.client.provider['server'],
             self.client.provider['server_port'],
             transform_name(self.want.partition, self.want.name)
@@ -442,7 +489,7 @@ class GenericModuleManager(BaseManager):
                 raise F5ModuleError(resp.content)
 
     def remove_from_device(self):
-        uri = "https://{0}:{1}/mgmt/tm/ltm/message-routing/generic/route/{2}".format(
+        uri = "https://{0}:{1}/mgmt/tm/ltm/message-routing/generic/protocol/{2}".format(
             self.client.provider['server'],
             self.client.provider['server_port'],
             transform_name(self.want.partition, self.want.name)
@@ -453,7 +500,7 @@ class GenericModuleManager(BaseManager):
         raise F5ModuleError(response.content)
 
     def read_current_from_device(self):
-        uri = "https://{0}:{1}/mgmt/tm/ltm/message-routing/generic/route/{2}".format(
+        uri = "https://{0}:{1}/mgmt/tm/ltm/message-routing/generic/protocol/{2}".format(
             self.client.provider['server'],
             self.client.provider['server_port'],
             transform_name(self.want.partition, self.want.name)
@@ -472,52 +519,18 @@ class GenericModuleManager(BaseManager):
         return ApiParameters(params=response)
 
 
-class ModuleManager(object):
-    def __init__(self, *args, **kwargs):
-        self.module = kwargs.get('module', None)
-        self.client = F5RestClient(**self.module.params)
-        self.kwargs = kwargs
-
-    def version_less_than_14(self):
-        version = tmos_version(self.client)
-        if LooseVersion(version) < LooseVersion('14.0.0'):
-            return True
-        return False
-
-    def exec_module(self):
-        if self.version_less_than_14():
-            raise F5ModuleError('Message routing is not supported on TMOS version below 14.x')
-        if self.module.params['type'] == 'generic':
-            manager = self.get_manager('generic')
-        else:
-            raise F5ModuleError(
-                "Unknown type specified."
-            )
-        return manager.exec_module()
-
-    def get_manager(self, type):
-        if type == 'generic':
-            return GenericModuleManager(**self.kwargs)
-
-
 class ArgumentSpec(object):
     def __init__(self):
         self.supports_check_mode = True
         argument_spec = dict(
             name=dict(required=True),
             description=dict(),
-            src_address=dict(),
-            dst_address=dict(),
-            peer_selection_mode=dict(
-                choices=['ratio', 'sequential']
-            ),
-            peers=dict(
-                type='list'
-            ),
-            type=dict(
-                choices=['generic'],
-                default='generic'
-            ),
+            parent=dict(),
+            disable_parser=dict(type='bool'),
+            max_egress_buffer=dict(type='int'),
+            max_msg_size=dict(type='int'),
+            msg_terminator=dict(),
+            no_response=dict(type='bool'),
             partition=dict(
                 default='Common',
                 fallback=(env_fallback, ['F5_PARTITION'])
