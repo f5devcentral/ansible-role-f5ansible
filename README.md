@@ -3,15 +3,17 @@
 Using this role, you will be able to use the latest version, and version specific F5 Networks
 Ansible Modules.
 
-This is a stop-gap solution until Ansible Galaxy's "Collection" feature is stable and globally
-available.
+**With official release of collections with Ansible 2,9, this role will be deprecated and no longer updated.
+The last updated and released version of the role will be v2019.8.27.**
+
 
 ## Requirements
 
  - python >= 2.7
 
-Due to significant changes in some of the plugins, to ensure all of the elements function correctly the Ansible 
-requirement has been changed to 2.8 or higher. Requirements are listed in the metadata file.
+Due to removal of certain legacy paramaters, to ensure all of the elements function correctly the Ansible 
+requirement has been changed to 2.9 or higher starting for versions later than **v2019.8.2.** 
+Requirements are listed in the metadata file.
 
 ## Installation
 
