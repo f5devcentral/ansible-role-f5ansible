@@ -4,7 +4,7 @@ Using this role, you will be able to use the latest version, and version specifi
 Ansible Modules.
 
 **With official release of collections with Ansible 2,9, this role will be deprecated and no longer updated.
-The last updated and released version of the role will be v2019.8.27.**
+The last updated and released version of the role will be v2019.9.27.**
 
 
 ## Requirements
